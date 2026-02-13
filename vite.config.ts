@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Stocker - Simple Stock Tracking',
+        name: 'Stocker - Professional Stock Analysis',
         short_name: 'Stocker',
-        description: 'A modern stock tracking PWA with real-time data and analysis.',
+        description: 'A comprehensive stock market dashboard featuring advanced charting, 5-day historical data analysis, and a personalized favorites list.',
         theme_color: '#010203',
         background_color: '#010203',
         display: 'standalone',
@@ -34,6 +34,22 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
+          }
+        ],
+        screenshots: [
+          {
+            src: 'screenshot-mobile.png',
+            sizes: '540x1080',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: 'Mobile View'
+          },
+          {
+            src: 'screenshot-desktop.png',
+            sizes: '1280x720',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: 'Desktop Dashboard'
           }
         ]
       }

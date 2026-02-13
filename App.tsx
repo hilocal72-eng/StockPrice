@@ -10,8 +10,21 @@ type View = 'dashboard' | 'favorites';
 
 const AnimatedMarketBackground: React.FC = () => {
   return (
-    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-[#010203]">
-      <div className="absolute inset-0 bg-grid animate-grid opacity-20" />
+    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+      {/* Glossy Fancy Image Background */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-1000"
+        style={{ 
+          backgroundImage: 'url("https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=2564")',
+          filter: 'brightness(0.3) saturate(1.2)'
+        }}
+      />
+      {/* Glossy Overlay Gradients */}
+      <div className="absolute inset-0 bg-gradient-to-tr from-black via-transparent to-pink-900/10 opacity-60" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(0,0,0,0)_0%,rgba(1,2,3,1)_90%)]" />
+      
+      {/* Animated Elements */}
+      <div className="absolute inset-0 bg-grid animate-grid opacity-10" />
       <div className="absolute inset-0">
         {[...Array(12)].map((_, i) => (
           <motion.div
@@ -23,7 +36,7 @@ const AnimatedMarketBackground: React.FC = () => {
             }}
             animate={{ 
               y: [null, "-5%", "105%"],
-              opacity: [0, 0.2, 0]
+              opacity: [0, 0.15, 0]
             }}
             transition={{ 
               duration: 20 + Math.random() * 30, 
@@ -33,11 +46,11 @@ const AnimatedMarketBackground: React.FC = () => {
             }}
             className="absolute"
           >
-            <div className={`w-[1px] h-10 bg-gradient-to-b from-transparent ${i % 2 === 0 ? 'via-pink-500/30' : 'via-blue-500/30'} to-transparent`} />
+            <div className={`w-[1px] h-10 bg-gradient-to-b from-transparent ${i % 2 === 0 ? 'via-pink-500/20' : 'via-blue-500/20'} to-transparent`} />
           </motion.div>
         ))}
       </div>
-      <div className="absolute inset-0 scanlines opacity-[0.05]" />
+      <div className="absolute inset-0 scanlines opacity-[0.03]" />
     </div>
   );
 };
@@ -245,7 +258,7 @@ const App: React.FC = () => {
       </AnimatePresence>
 
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-[70px] glossy-card !bg-black/50 !rounded-none !border-y-0 !border-l-0 border-r !border-white/50 z-30 shrink-0">
+      <aside className="hidden md:flex flex-col w-[70px] glossy-card !bg-black/30 !rounded-none !border-y-0 !border-l-0 border-r !border-white/50 z-30 shrink-0">
         <div className="p-4 flex justify-center">
           <div className="bg-pink-600 w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-xl border border-white/40">
             <TrendingUp size={20} strokeWidth={4} />
@@ -268,7 +281,7 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-[80px] md:pb-6 p-4 md:p-6 relative z-10">
+      <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-32 md:pb-6 p-4 md:p-6 relative z-10 bg-black/10">
         <div className="max-w-6xl mx-auto space-y-6">
           <header className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex md:hidden items-center gap-3 w-full mb-2">
@@ -364,7 +377,7 @@ const App: React.FC = () => {
                 <div className="lg:col-span-3">
                   <TerminalChart data={stockData.history} />
                 </div>
-                <div className="flex flex-col gap-6 lg:col-span-1">
+                <div className="flex flex-col gap-6 lg:col-span-1 pb-4">
                   <PriceActionTable data={stockData.dailyAction} />
                 </div>
               </div>
@@ -413,11 +426,13 @@ const App: React.FC = () => {
                )}
             </div>
           )}
+          {/* Spacer to ensure content isn't overlapped by fixed navigation */}
+          <div className="h-12 md:hidden"></div>
         </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[64px] glossy-card !bg-black/80 !rounded-2xl border !border-white/40 flex items-center justify-around shadow-2xl px-2">
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[64px] glossy-card !bg-black/60 !rounded-2xl border !border-white/40 flex items-center justify-around shadow-2xl px-2">
         <button 
           onClick={() => setActiveView('dashboard')} 
           className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${activeView === 'dashboard' ? 'text-pink-500' : 'text-white/40'}`}

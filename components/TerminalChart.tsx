@@ -90,7 +90,7 @@ const TerminalChart: React.FC<TerminalChartProps> = ({ data }) => {
 
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} margin={{ top: 50, right: 0, left: -25, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff40" vertical={false} />
           <XAxis 
             dataKey="date" 
             axisLine={false} 

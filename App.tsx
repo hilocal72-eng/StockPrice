@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2 } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert } from './types.ts';
 import TerminalChart from './components/TerminalChart.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
+import { isPushSupported, getNotificationPermission, requestNotificationPermission, subscribeUser, unsubscribeUser, getPushSubscription } from './services/pushNotificationService.ts';
 
 type View = 'dashboard' | 'favorites' | 'alerts';
 type Timeframe = '15m' | '1D';
@@ -35,14 +36,17 @@ const AnimatedMarketBackground: React.FC = () => {
   );
 };
 
-const AlertModal: React.FC<{ ticker: string; currentPrice: number; onClose: () => void; onSave: (price: number, condition: 'above' | 'below') => Promise<void> }> = ({ ticker, currentPrice, onClose, onSave }) => {
+const AlertModal: React.FC<{ ticker: string; currentPrice: number; onClose: () => void; onSave: (price: number, condition: 'above' | 'below') => Promise<boolean> }> = ({ ticker, currentPrice, onClose, onSave }) => {
   const [targetPrice, setTargetPrice] = useState(currentPrice.toFixed(2));
   const [condition, setCondition] = useState<'above' | 'below'>('above');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleAction = async () => {
     setIsSaving(true);
-    await onSave(parseFloat(targetPrice), condition);
+    const success = await onSave(parseFloat(targetPrice), condition);
+    if (!success) {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -213,6 +217,10 @@ const App: React.FC = () => {
   const [userAlerts, setUserAlerts] = useState<Alert[]>([]);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
 
+  // Push notification state
+  const [pushStatus, setPushStatus] = useState<NotificationPermission>('default');
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
+
   // Favorites screen filter states
   const [favSearchTerm, setFavSearchTerm] = useState('');
   const [favFilter, setFavFilter] = useState<SentimentFilter>('all');
@@ -248,6 +256,7 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Fix: Removed handleSelectAndSearch from its own dependency array to fix "used before its declaration" error.
   const handleSelectAndSearch = useCallback((ticker: string) => {
     setSearchTerm('');
     setSearchResults([]);
@@ -267,26 +276,61 @@ const App: React.FC = () => {
   }, [stockData, handleFetchData]);
 
   // Alert Actions
-  const handleSaveAlert = async (price: number, condition: 'above' | 'below') => {
-    if (!stockData) return;
-    const success = await createAlert({
-      ticker: stockData.info.ticker,
-      target_price: price,
-      condition: condition
-    });
-    if (success) {
-      const freshAlerts = await fetchUserAlerts();
-      setUserAlerts(freshAlerts);
-      setIsAlertModalOpen(false);
-    } else {
-      setError("Failed to sync alert with Cloudflare.");
+  const handleSaveAlert = async (price: number, condition: 'above' | 'below'): Promise<boolean> => {
+    if (!stockData) return false;
+    
+    setError(null);
+    try {
+      // Auto-request push if not yet enabled
+      if (isPushSupported() && getNotificationPermission() === 'default') {
+        const perm = await requestNotificationPermission();
+        setPushStatus(perm);
+        if (perm === 'granted') {
+          const subbed = await subscribeUser();
+          setIsPushSubscribed(subbed);
+        }
+      }
+
+      const success = await createAlert({
+        ticker: stockData.info.ticker,
+        target_price: price,
+        condition: condition
+      });
+
+      if (success) {
+        const freshAlerts = await fetchUserAlerts();
+        setUserAlerts(Array.isArray(freshAlerts) ? freshAlerts : []);
+        setIsAlertModalOpen(false);
+        return true;
+      } else {
+        setError("Unable to save alert. Check connection or Worker status.");
+        return false;
+      }
+    } catch (err) {
+      console.error("Alert save crash:", err);
+      setError("An unexpected error occurred while saving alert.");
+      return false;
     }
   };
 
   const handleDeleteAlert = async (id: number) => {
     const success = await deleteAlert(id);
     if (success) {
-      setUserAlerts(prev => prev.filter(a => a.id !== id));
+      setUserAlerts(prev => Array.isArray(prev) ? prev.filter(a => a.id !== id) : []);
+    }
+  };
+
+  const handleTogglePush = async () => {
+    if (isPushSubscribed) {
+      const success = await unsubscribeUser();
+      if (success) setIsPushSubscribed(false);
+    } else {
+      const perm = await requestNotificationPermission();
+      setPushStatus(perm);
+      if (perm === 'granted') {
+        const success = await subscribeUser();
+        setIsPushSubscribed(success);
+      }
     }
   };
 
@@ -307,7 +351,14 @@ const App: React.FC = () => {
     const storedFavs = localStorage.getItem('stkr_favs_v2');
     if (storedFavs) setFavorites(JSON.parse(storedFavs));
     getAnonymousId();
-    fetchUserAlerts().then(setUserAlerts);
+    fetchUserAlerts().then(alerts => setUserAlerts(Array.isArray(alerts) ? alerts : []));
+    
+    // Check push status
+    if (isPushSupported()) {
+      setPushStatus(getNotificationPermission());
+      getPushSubscription().then(sub => setIsPushSubscribed(!!sub));
+    }
+
     handleSelectAndSearch('AAPL');
   }, [handleSelectAndSearch]);
 
@@ -332,7 +383,7 @@ const App: React.FC = () => {
   }, [activeView, favorites]);
 
   const activeAlertForCurrent = useMemo(() => {
-    if (!stockData) return null;
+    if (!stockData || !Array.isArray(userAlerts)) return null;
     return userAlerts.find(a => a.ticker === stockData.info.ticker && a.status === 'active');
   }, [userAlerts, stockData]);
 
@@ -436,20 +487,42 @@ const App: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4 animate-in fade-in duration-500">
-               <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <BellRing className="text-yellow-500" size={10} strokeWidth={2.5} />
-                    <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Price Alert</h2>
+               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 glossy-card !border-white/20 rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-yellow-500/10 rounded-xl border border-yellow-500/30">
+                      <BellRing className="text-yellow-500" size={16} strokeWidth={2.5} />
+                    </div>
+                    <div>
+                      <h2 className="text-[11px] font-black text-white uppercase tracking-widest">Notification Settings</h2>
+                      <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mt-0.5">Receive alerts directly on your device</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/[0.03] border border-white/10 rounded-full">
-                    <span className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
-                    <span className="text-[7px] font-black text-white/40 uppercase tracking-widest"></span>
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-col items-end">
+                      <span className={`text-[8px] font-black uppercase tracking-widest ${pushStatus === 'granted' ? 'text-emerald-400' : pushStatus === 'denied' ? 'text-rose-400' : 'text-white/30'}`}>
+                        {pushStatus === 'granted' ? 'Enabled' : pushStatus === 'denied' ? 'Blocked' : 'Action Required'}
+                      </span>
+                    </div>
+                    <button 
+                      onClick={handleTogglePush}
+                      className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${isPushSubscribed ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' : 'bg-pink-600 border-white/30 text-white shadow-lg'}`}
+                    >
+                      {isPushSubscribed ? 'Disable Push' : 'Enable Push'}
+                    </button>
                   </div>
                </div>
-               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {userAlerts.map(alert => (
+
+               {pushStatus === 'denied' && (
+                 <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-3">
+                    <ShieldAlert size={14} className="text-rose-500 shrink-0" />
+                    <p className="text-[8px] font-bold text-rose-400 uppercase tracking-wider">Browser notifications are blocked. Please enable them in your browser settings to receive alerts.</p>
+                 </div>
+               )}
+
+               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 pt-2">
+                  {Array.isArray(userAlerts) && userAlerts.map(alert => (
                     <motion.div 
-                      key={alert.id} 
+                      key={alert.id || `alert-${alert.ticker}-${alert.target_price}`} 
                       layout
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -493,7 +566,7 @@ const App: React.FC = () => {
 
                         <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5 flex items-end justify-between relative z-10">
                           <div className="flex flex-col">
-                             <div className="flex items-center gap-1 text-[7px] font-black text-white/50 uppercase tracking-widest mb-0.5">
+                             <div className="flex items-center gap-1 text-[7px] font-black text-white/30 uppercase tracking-widest mb-0.5">
                                {alert.condition === 'above' ? 'Target Above' : 'Target Below'}
                              </div>
                              <div className="text-2xl font-black text-white tabular-nums tracking-tighter leading-none">
@@ -506,7 +579,7 @@ const App: React.FC = () => {
                                 {alert.condition === 'above' ? <ArrowUpRight size={8} /> : <ArrowDownRight size={8} />}
                                 Threshold
                              </div>
-                             <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block">
+                             <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest block">
                                Notify on breach
                              </span>
                           </div>
@@ -514,7 +587,7 @@ const App: React.FC = () => {
                       </div>
                     </motion.div>
                   ))}
-                  {userAlerts.length === 0 && (
+                  {(!Array.isArray(userAlerts) || userAlerts.length === 0) && (
                     <div className="col-span-full py-16 text-center rounded-2xl border-2 border-dashed border-white/5 flex flex-col items-center gap-3">
                       <BellRing size={24} className="text-white/5" strokeWidth={1} />
                       <div className="space-y-0.5">

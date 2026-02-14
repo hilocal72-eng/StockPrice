@@ -140,9 +140,15 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
         secondsVisible: false, 
         borderColor: 'rgba(255, 255, 255, 0.2)',
         shiftVisibleRangeOnNewBar: true,
+        handleScale: isModal,
       },
-      rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.2)' },
-      crosshair: { mode: 1 },
+      handleScroll: isModal,
+      handleScale: isModal,
+      rightPriceScale: { 
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        handleScale: isModal,
+      },
+      crosshair: { mode: isModal ? 1 : 0 },
     });
     
     chartRef.current = chart;

@@ -1,6 +1,10 @@
 
 import { StockDetails, PricePoint, DayAction, StockInfo, SentimentAnalysis, SearchResult } from '../types.ts';
 
+// Simple in-memory cache to speed up repeated requests
+const dataCache: Record<string, { data: StockDetails; timestamp: number }> = {};
+const CACHE_TTL = 60 * 1000; // 60 seconds
+
 const fetchYahoo = async (symbol: string, interval: string, range: string): Promise<any | null> => {
   try {
     const cacheBuster = `&t=${Date.now()}`;
@@ -72,20 +76,42 @@ const generateSentimentAnalysis = (changePercent: number, history: PricePoint[])
 
 export const fetchStockData = async (ticker: string, range: string = '1y', interval: string = '1d'): Promise<StockDetails | null> => {
   if (!ticker) return null;
-  
   const rawSymbol = ticker.toUpperCase().trim();
-  let chartResult = await fetchYahoo(rawSymbol, interval, range); 
-  let historyResult = await fetchYahoo(rawSymbol, '1d', '7d'); // For weekly table
+  const cacheKey = `${rawSymbol}_${range}_${interval}`;
 
+  // Check cache first
+  const cached = dataCache[cacheKey];
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+    return cached.data;
+  }
+  
+  // PARALLEL FETCH: Load chart and history at the same time for performance
+  let [chartResult, historyResult] = await Promise.all([
+    fetchYahoo(rawSymbol, interval, range),
+    fetchYahoo(rawSymbol, '1d', '7d')
+  ]);
+
+  // Fallback for Indian markets if common symbol is used without suffix
   if (!chartResult && !rawSymbol.includes('.')) {
     const nsSymbol = `${rawSymbol}.NS`;
-    chartResult = await fetchYahoo(nsSymbol, interval, range);
-    historyResult = await fetchYahoo(nsSymbol, '1d', '7d');
+    const [nsChart, nsHistory] = await Promise.all([
+      fetchYahoo(nsSymbol, interval, range),
+      fetchYahoo(nsSymbol, '1d', '7d')
+    ]);
     
-    if (!chartResult) {
+    if (nsChart) {
+      chartResult = nsChart;
+      historyResult = nsHistory;
+    } else {
       const boSymbol = `${rawSymbol}.BO`;
-      chartResult = await fetchYahoo(boSymbol, interval, range);
-      historyResult = await fetchYahoo(boSymbol, '1d', '7d');
+      const [boChart, boHistory] = await Promise.all([
+        fetchYahoo(boSymbol, interval, range),
+        fetchYahoo(boSymbol, '1d', '7d')
+      ]);
+      if (boChart) {
+        chartResult = boChart;
+        historyResult = boHistory;
+      }
     }
   }
 
@@ -136,7 +162,6 @@ export const fetchStockData = async (ticker: string, range: string = '1y', inter
       const close = hQuotes.close[i] || 0;
       const rowPrevClose = i > 0 ? hQuotes.close[i-1] : hQuotes.open[i];
       return {
-        // Removed year from date formatting
         date: new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         open: parseFloat(open.toFixed(2)),
         high: parseFloat((hQuotes.high[i] || 0).toFixed(2)),
@@ -148,7 +173,12 @@ export const fetchStockData = async (ticker: string, range: string = '1y', inter
       };
     }).reverse().slice(0, 5);
 
-    return { info, history, dailyAction };
+    const result = { info, history, dailyAction };
+    
+    // Store in cache
+    dataCache[cacheKey] = { data: result, timestamp: Date.now() };
+    
+    return result;
   } catch (error) {
     console.error("Processing Error:", error);
     return null;

@@ -59,3 +59,12 @@ export interface TrendLine {
   p1: { time: number; price: number };
   p2: { time: number; price: number };
 }
+
+export interface Alert {
+  id?: number;
+  ticker: string;
+  target_price: number;
+  condition: 'above' | 'below';
+  status: 'active' | 'triggered' | 'disabled';
+  created_at?: string;
+}

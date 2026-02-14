@@ -1,3 +1,4 @@
+
 import { StockDetails, PricePoint, DayAction, StockInfo, SentimentAnalysis, SearchResult } from '../types.ts';
 
 const fetchYahoo = async (symbol: string, interval: string, range: string): Promise<any | null> => {
@@ -135,7 +136,8 @@ export const fetchStockData = async (ticker: string, range: string = '1y', inter
       const close = hQuotes.close[i] || 0;
       const rowPrevClose = i > 0 ? hQuotes.close[i-1] : hQuotes.open[i];
       return {
-        date: new Date(t * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        // Removed year from date formatting
+        date: new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         open: parseFloat(open.toFixed(2)),
         high: parseFloat((hQuotes.high[i] || 0).toFixed(2)),
         low: parseFloat((hQuotes.low[i] || 0).toFixed(2)),

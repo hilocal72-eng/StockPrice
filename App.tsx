@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint } from './types.ts';
@@ -9,6 +9,7 @@ import TerminalChart from './components/TerminalChart.tsx';
 type View = 'dashboard' | 'favorites';
 type Timeframe = '15m' | '1D';
 type DrawingTool = 'horizontal' | 'trend' | null;
+type SentimentFilter = 'all' | 'bullish' | 'bearish';
 
 const TIMEFRAMES: Record<Timeframe, { range: string; interval: string }> = {
   '15m': { range: '5d', interval: '15m' },
@@ -114,17 +115,17 @@ const SentimentIndicator: React.FC<{ analysis: SentimentAnalysis; size?: 'sm' | 
     <motion.button 
       whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 transition-all cursor-pointer backdrop-blur-md shadow-lg ${config.color} ${size === 'sm' ? 'scale-90' : ''}`}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 transition-all cursor-pointer backdrop-blur-md shadow-lg ${config.color} ${size === 'sm' ? 'scale-75' : ''}`}
     >
-      <Icon size={size === 'sm' ? 10 : 12} strokeWidth={3} />
-      <span className={`${size === 'sm' ? 'text-[8px]' : 'text-[10px]'} font-extrabold uppercase tracking-widest`}>{config.text}</span>
+      <Icon size={size === 'sm' ? 8 : 12} strokeWidth={3} />
+      <span className={`${size === 'sm' ? 'text-[7px]' : 'text-[10px]'} font-extrabold uppercase tracking-widest`}>{config.text}</span>
     </motion.button>
   );
 };
 
 const PriceActionTable: React.FC<{ data: DayAction[] }> = ({ data }) => {
   return (
-    <div className="glossy-card !border-white/40 rounded-xl overflow-hidden flex-1">
+    <div className="glossy-card !border-white/40 rounded-xl overflow-hidden flex-1 min-w-[300px]">
       <div className="px-3 py-2 border-b border-white/30 flex items-center justify-between bg-white/[0.06]">
         <div className="flex items-center gap-2">
           <Calendar size={12} className="text-pink-500" />
@@ -132,7 +133,7 @@ const PriceActionTable: React.FC<{ data: DayAction[] }> = ({ data }) => {
         </div>
       </div>
       <div className="overflow-x-auto custom-scrollbar">
-        <table className="w-full text-left border-collapse min-w-[400px]">
+        <table className="w-full text-left border-collapse min-w-[300px]">
           <thead>
             <tr className="bg-white/[0.04] border-b border-white/20">
               <th className="px-3 py-2 text-[8px] font-black text-white/50 uppercase tracking-widest">Date</th>
@@ -180,6 +181,20 @@ const App: React.FC = () => {
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [clearLinesSignal, setClearLinesSignal] = useState(0);
+  const [dashDays, setDashDays] = useState(10);
+
+  // Favorites screen filter states
+  const [favSearchTerm, setFavSearchTerm] = useState('');
+  const [favFilter, setFavFilter] = useState<SentimentFilter>('all');
+
+  const filteredFavorites = useMemo(() => {
+    return favoriteStocksDetails.filter(stock => {
+      const matchesSearch = stock.info.ticker.toLowerCase().includes(favSearchTerm.toLowerCase()) ||
+                          stock.info.name.toLowerCase().includes(favSearchTerm.toLowerCase());
+      const matchesSentiment = favFilter === 'all' || stock.info.sentiment.type === favFilter;
+      return matchesSearch && matchesSentiment;
+    });
+  }, [favoriteStocksDetails, favSearchTerm, favFilter]);
 
   const handleFetchData = useCallback(async (ticker: string, timeframe: Timeframe) => {
     if (!ticker || ticker.trim() === '') return;
@@ -207,11 +222,14 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Fix: Remove handleSelectAndSearch from its own dependency array to prevent "used before declaration"
   const handleSelectAndSearch = useCallback((ticker: string) => {
     setSearchTerm('');
     setSearchResults([]);
     setIsSearchFocused(false);
-    document.activeElement instanceof HTMLElement && document.activeElement.blur();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setActiveView('dashboard');
     const newTimeframe = '1D';
     setCurrentTimeframe(newTimeframe);
@@ -365,67 +383,76 @@ const App: React.FC = () => {
         </nav>
       </aside>
       <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-32 md:pb-6 p-4 md:p-6 relative z-10 bg-black/10">
-        <div className="max-w-6xl mx-auto space-y-6">
-          <header className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex md:hidden items-center gap-3 w-full mb-2">
+        <div className="max-w-6xl mx-auto space-y-3">
+          <header className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex md:hidden items-center gap-3 w-full mb-1">
               <div className="bg-pink-600 w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg border border-white/30"><TrendingUp size={16} strokeWidth={4} /></div>
               <h1 className="text-xl font-black text-white tracking-tighter uppercase">Stocker</h1>
             </div>
             
-            <div 
-              className="w-full max-sm relative group"
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsSearchFocused(false); }}
-            >
-              <form 
-                className="relative"
-                onSubmit={(e) => { 
-                  e.preventDefault(); 
-                  const target = searchResults.length > 0 ? searchResults[0].symbol : searchTerm;
-                  handleSelectAndSearch(target);
-              }}>
-                <input
-                  type="text"
-                  placeholder="Search by name or symbol..."
-                  className="w-full bg-white/[0.08] border border-white/40 rounded-xl py-3 pl-5 pr-12 text-[12px] font-bold text-white placeholder-white/30 focus:outline-none focus:border-pink-500/80 transition-all shadow-inner"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <button type="submit" className="absolute inset-y-0 right-0 flex items-center pr-4 text-yellow/80 hover:text-pink-500 transition-colors duration-200">
-                  <motion.div
-                    animate={{ 
-                      y: [0, -2, 0],
-                      scale: [1, 1.1, 1]
-                    }}
-                    transition={{ 
-                      duration: 2, 
-                      repeat: Infinity, 
-                      ease: "easeInOut" 
-                    }}
-                  >
-                    <TrendingUp size={16} strokeWidth={3} />
-                  </motion.div>
-                </button>
-              </form>
-              <AnimatePresence>
-                {isSearchFocused && searchResults.length > 0 && (
-                  <motion.ul 
-                    initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full mt-2 w-full glossy-card !border-white/40 rounded-xl overflow-hidden z-50 p-1"
-                  >
-                    {searchResults.map((result) => (
-                      <li key={result.symbol} onMouseDown={() => handleSelectAndSearch(result.symbol)} className="p-3 hover:bg-white/10 rounded-lg cursor-pointer transition-colors">
-                        <div className="flex items-center justify-between">
-                           <span className="text-[11px] font-black text-white uppercase">{result.symbol}</span>
-                           <span className="text-[9px] font-bold text-white/40 px-2 py-0.5 bg-white/5 rounded">{result.exchange}</span>
-                        </div>
-                        <p className="text-[10px] text-white/60 mt-1 truncate">{result.name}</p>
-                      </li>
-                    ))}
-                  </motion.ul>
-                )}
-              </AnimatePresence>
-            </div>
+            {activeView === 'dashboard' && (
+              <div 
+                className="w-full max-sm relative group"
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsSearchFocused(false); }}
+              >
+                <form 
+                  className="relative"
+                  onSubmit={(e) => { 
+                    e.preventDefault(); 
+                    const target = searchResults.length > 0 ? searchResults[0].symbol : searchTerm;
+                    handleSelectAndSearch(target);
+                }}>
+                  <input
+                    type="text"
+                    placeholder="Search by name or symbol..."
+                    className="w-full bg-white/[0.08] border border-white/40 rounded-xl py-3 pl-5 pr-12 text-[12px] font-bold text-white placeholder-white/30 focus:outline-none focus:border-pink-500/80 transition-all shadow-inner"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  <button type="submit" className="absolute inset-y-0 right-0 flex items-center pr-4 text-yellow/80 hover:text-pink-500 transition-colors duration-200">
+                    <motion.div
+                      animate={{ 
+                        y: [0, -2, 0],
+                        scale: [1, 1.1, 1]
+                      }}
+                      transition={{ 
+                        duration: 2, 
+                        repeat: Infinity, 
+                        ease: "easeInOut" 
+                      }}
+                    >
+                      <TrendingUp size={16} strokeWidth={3} />
+                    </motion.div>
+                  </button>
+                </form>
+                <AnimatePresence>
+                  {isSearchFocused && searchResults.length > 0 && (
+                    <motion.ul 
+                      initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                      className="absolute top-full mt-2 w-full glossy-card !border-white/40 rounded-xl overflow-hidden z-50 p-1"
+                    >
+                      {searchResults.map((result) => (
+                        <li key={result.symbol} onMouseDown={() => handleSelectAndSearch(result.symbol)} className="p-3 hover:bg-white/10 rounded-lg cursor-pointer transition-colors">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black text-white uppercase">{result.symbol}</span>
+                            <span className="text-[9px] font-bold text-white/40 px-2 py-0.5 bg-white/5 rounded">{result.exchange}</span>
+                          </div>
+                          <p className="text-[10px] text-white/60 mt-1 truncate">{result.name}</p>
+                        </li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {activeView === 'favorites' && (
+              <div className="flex items-center gap-2 opacity-80">
+                <Heart size={14} className="text-pink-500 fill-pink-500" />
+                <h1 className="text-[11px] font-black text-white uppercase tracking-tighter">Your Watchlist</h1>
+              </div>
+            )}
             
             <div className="hidden sm:flex items-center gap-5 text-white/30 text-[8px] font-black uppercase tracking-wider">
                <div className="flex items-center gap-2"><ShieldCheck size={12} className="text-emerald-500/60" /><span>Verified</span></div>
@@ -475,11 +502,19 @@ const App: React.FC = () => {
                    </div>
                 </div>
               </section>
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <div className="lg:col-span-3 h-[450px] glossy-card !border-white/50 p-1 rounded-2xl relative group shadow-2xl bg-black/30">
-                  {dailyHistory && <TerminalChart ticker={stockData.info.ticker} data={dailyHistory.slice(-15)} isModal={false} />}
-                  <div className="absolute top-4 left-4 z-10 px-3 py-1.5 bg-black/50 rounded-xl border border-white/20 backdrop-blur-lg text-white/70 text-[9px] font-black uppercase tracking-widest">
-                    Last 15 Days
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+                <div className="lg:col-span-3 h-[450px] w-full glossy-card !border-white/50 p-1 rounded-2xl relative group shadow-2xl bg-black/30 overflow-hidden">
+                  {dailyHistory && <TerminalChart ticker={stockData.info.ticker} data={dailyHistory.slice(-dashDays)} isModal={false} />}
+                  <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 p-1 bg-black/60 rounded-xl border border-white/20 backdrop-blur-lg">
+                    {[10, 20, 30].map(d => (
+                      <button 
+                        key={d}
+                        onClick={() => setDashDays(d)}
+                        className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all ${dashDays === d ? 'bg-pink-600 border-pink-400 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                      >
+                        {d}D
+                      </button>
+                    ))}
                   </div>
                   <button 
                     onClick={() => setIsChartModalOpen(true)}
@@ -488,48 +523,101 @@ const App: React.FC = () => {
                     <Expand size={16} />
                   </button>
                 </div>
-                <div className="flex flex-col gap-6 lg:col-span-1 pb-4">
+                <div className="lg:col-span-1">
                   <PriceActionTable data={stockData.dailyAction} />
                 </div>
               </div>
             </div>
           ) : activeView === 'favorites' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in duration-500">
-               {favoriteStocksDetails.map((fav) => (
-                  <div 
-                    key={fav.info.ticker} 
-                    className="glossy-card !border-white/40 p-5 rounded-2xl space-y-5 hover:border-pink-500/60 transition-all cursor-pointer group shadow-xl active:scale-[0.98]" 
-                    onClick={() => handleSelectAndSearch(fav.info.ticker)}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="text-lg font-black text-white group-hover:text-pink-500 transition-colors uppercase tracking-tight">{fav.info.ticker.split('.')[0]}</h3>
-                        <p className="text-[8px] text-white/50 font-black mt-1 uppercase tracking-widest truncate max-w-[120px]">{fav.info.name.split(' ')[0]}</p>
-                      </div>
-                      <div className={`text-[10px] font-black px-2 py-1 rounded-lg border ${fav.info.change >= 0 ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10' : 'text-rose-500 border-rose-500/40 bg-rose-500/10'}`}>{fav.info.changePercent.toFixed(2)}%</div>
-                    </div>
-                    <div className="flex justify-between items-end border-t border-white/10 pt-4">
-                       <span className="text-2xl font-black text-white tabular-nums">{fav.info.currentPrice.toFixed(2)}</span>
-                       <SentimentIndicator analysis={fav.info.sentiment} size="sm" onClick={() => setSelectedSentiment({ ticker: fav.info.ticker.split('.')[0], analysis: fav.info.sentiment })} />
-                    </div>
+            <div className="space-y-3 animate-in fade-in duration-500">
+               {/* Unified Watchlist Controls Toolbar */}
+               <div className="flex items-center p-0.5 bg-white/[0.03] border border-white/30 rounded-xl max-w-2xl">
+                  <div className="relative flex-1 group min-w-0 opacity-80">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-pink-500 transition-colors" size={10} />
+                    <input 
+                      type="text" 
+                      placeholder="Filter favorites..."
+                      className="w-full bg-transparent py-1.5 pl-8 pr-4 text-[9px] font-black uppercase tracking-wider text-white placeholder-white/20 focus:outline-none transition-all"
+                      value={favSearchTerm}
+                      onChange={(e) => setFavSearchTerm(e.target.value)}
+                    />
                   </div>
-               ))}
-               {favorites.length === 0 && (
-                 <div className="col-span-full py-24 text-center glossy-card !border-white/30 rounded-3xl flex flex-col items-center gap-6">
-                    <Heart size={48} className="text-white/10" strokeWidth={1} />
-                    <div className="space-y-2">
-                      <span className="block text-[12px] font-black text-white/50 uppercase tracking-[0.2em]">Your watchlist is empty</span>
-                      <p className="text-[10px] text-white/30 max-w-[200px]">Start searching for stocks to add them to your favorites list.</p>
+                  
+                  <div className="w-[1px] h-4 bg-white/20 mx-1" />
+                  
+                  <div className="flex items-center gap-0.5 shrink-0 opacity-80">
+                    {(['all', 'bullish', 'bearish'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setFavFilter(mode)}
+                        className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${favFilter === mode ? 'bg-white/20 text-white shadow-lg border border-white/40' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        {mode === 'bullish' && <Flame size={8} className={favFilter === 'bullish' ? 'text-emerald-400' : ''} />}
+                        {mode === 'bearish' && <Snowflake size={8} className={favFilter === 'bearish' ? 'text-rose-500' : ''} />}
+                        <span className="hidden sm:inline">{mode}</span>
+                        {mode === 'all' && <span className="sm:hidden">All</span>}
+                      </button>
+                    ))}
+                  </div>
+               </div>
+
+               {/* Results Grid - Enhanced Glossy Gradient Cards */}
+               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                  {filteredFavorites.map((fav) => (
+                      <div 
+                        key={fav.info.ticker} 
+                        className="relative p-3 rounded-xl overflow-hidden transition-all cursor-pointer group shadow-xl active:scale-[0.98] border border-white/30 bg-gradient-to-br from-white/[0.12] via-white/[0.04] to-transparent backdrop-blur-md" 
+                        onClick={() => handleSelectAndSearch(fav.info.ticker)}
+                      >
+                        {/* Glossy Overlay Highlight */}
+                        <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/[0.08] to-transparent pointer-events-none" />
+                        
+                        <div className="relative z-10 flex justify-between items-start opacity-80">
+                          <div className="min-w-0">
+                            <h3 className="text-[11px] font-black text-white group-hover:text-pink-500 transition-colors uppercase tracking-tight truncate">{fav.info.ticker.split('.')[0]}</h3>
+                            <p className="text-[7px] text-white/60 font-black mt-0.5 uppercase tracking-widest truncate">{fav.info.name.split(' ')[0]}</p>
+                          </div>
+                          <div className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${fav.info.change >= 0 ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10' : 'text-rose-500 border-rose-500/40 bg-rose-500/10'}`}>
+                            {fav.info.changePercent.toFixed(1)}%
+                          </div>
+                        </div>
+                        <div className="relative z-10 flex justify-between items-end border-t border-white/10 pt-2 opacity-80">
+                          <span className="text-sm font-black text-white tabular-nums tracking-tighter">{fav.info.currentPrice.toFixed(2)}</span>
+                          <SentimentIndicator analysis={fav.info.sentiment} size="sm" onClick={() => setSelectedSentiment({ ticker: fav.info.ticker.split('.')[0], analysis: fav.info.sentiment })} />
+                        </div>
+                      </div>
+                  ))}
+                  
+                  {filteredFavorites.length === 0 && favorites.length > 0 && (
+                    <div className="col-span-full py-8 text-center border-2 border-dashed border-white/20 rounded-xl bg-white/[0.02]">
+                       <Meh size={20} className="text-white/20 mx-auto mb-2" />
+                       <span className="text-[8px] font-black text-white/30 uppercase tracking-[0.2em]">No results in watchlist</span>
+                       <button 
+                        onClick={() => { setFavSearchTerm(''); setFavFilter('all'); }}
+                        className="block mx-auto mt-2 text-[8px] font-black text-pink-500 uppercase tracking-widest hover:text-pink-400"
+                       >
+                         Reset Filters
+                       </button>
                     </div>
-                    <button onClick={() => setActiveView('dashboard')} className="px-8 py-3 bg-pink-600 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white/30 shadow-lg hover:bg-pink-500 transition-colors">Go to Dashboard</button>
-                 </div>
-               )}
+                  )}
+
+                  {favorites.length === 0 && (
+                    <div className="col-span-full py-16 text-center glossy-card !border-white/30 rounded-2xl flex flex-col items-center gap-4">
+                        <Heart size={32} className="text-white/10" strokeWidth={1} />
+                        <div className="space-y-1">
+                          <span className="block text-[10px] font-black text-white/50 uppercase tracking-[0.2em]">Watchlist Empty</span>
+                          <p className="text-[8px] text-white/30 max-w-[150px]">Add stocks to track them here.</p>
+                        </div>
+                        <button onClick={() => setActiveView('dashboard')} className="px-6 py-2 bg-pink-600 rounded-lg text-[9px] font-black uppercase tracking-widest border border-white/30 shadow-lg hover:bg-pink-500 transition-colors">Find Stocks</button>
+                    </div>
+                  )}
+               </div>
             </div>
           )}
           <div className="h-12 md:hidden"></div>
         </div>
       </main>
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[64px] glossy-card !bg-black/60 !rounded-2xl border !border-white/40 flex items-center justify-around shadow-2xl px-2">
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[64px] glossy-card !bg-black/60 !rounded-2xl border !border-white/30 flex items-center justify-around shadow-2xl px-2">
         <button onClick={() => setActiveView('dashboard')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${activeView === 'dashboard' ? 'text-pink-500' : 'text-white/40'}`}>
           <LayoutDashboard size={20} strokeWidth={activeView === 'dashboard' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Desk</span>
@@ -537,7 +625,7 @@ const App: React.FC = () => {
         <div className="w-[1px] h-6 bg-white/10" />
         <button onClick={() => setActiveView('favorites')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${activeView === 'favorites' ? 'text-pink-500' : 'text-white/40'}`}>
           <Heart size={20} strokeWidth={activeView === 'favorites' ? 3 : 2} fill={activeView === 'favorites' ? 'currentColor' : 'none'} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Watchlist</span>
+          <span className="text-[8px] font-black uppercase tracking-widest">Watch</span>
         </button>
       </nav>
     </div>

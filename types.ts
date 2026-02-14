@@ -1,6 +1,6 @@
 
 export interface PricePoint {
-  date: string;
+  time: number; // Unix timestamp (seconds)
   open: number;
   high: number;
   low: number;
@@ -46,4 +46,10 @@ export interface StockDetails {
   info: StockInfo;
   history: PricePoint[];
   dailyAction: DayAction[];
+}
+
+export interface SearchResult {
+  symbol: string;
+  name: string;
+  exchange: string;
 }

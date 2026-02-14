@@ -1,4 +1,4 @@
-import { StockDetails, PricePoint, DayAction, StockInfo, SentimentAnalysis } from '../types.ts';
+import { StockDetails, PricePoint, DayAction, StockInfo, SentimentAnalysis, SearchResult } from '../types.ts';
 
 const fetchYahoo = async (symbol: string, interval: string, range: string): Promise<any | null> => {
   try {
@@ -15,10 +15,32 @@ const fetchYahoo = async (symbol: string, interval: string, range: string): Prom
   }
 };
 
+export const searchStocks = async (query: string): Promise<SearchResult[]> => {
+  if (!query || query.trim().length < 1) return [];
+  try {
+    const targetUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=US&quotesCount=6&newsCount=0&listsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true`;
+    const url = `https://holy-sun-212b.hilocal72.workers.dev/`;
+    const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    if (!data.quotes || data.quotes.length === 0) return [];
+
+    return data.quotes
+      .filter((q: any) => q.symbol && (q.longname || q.shortname))
+      .map((q: any) => ({
+        symbol: q.symbol,
+        name: q.longname || q.shortname,
+        exchange: q.exchange,
+      }));
+  } catch (e) {
+    console.error('Search API error:', e);
+    return [];
+  }
+};
+
 const generateSentimentAnalysis = (changePercent: number, history: PricePoint[]): SentimentAnalysis => {
   const type = changePercent > 0.5 ? 'bullish' : changePercent < -0.5 ? 'bearish' : 'neutral';
   
-  // Calculate some pseudo-technical factors from history
   const recentPrices = history.slice(-5);
   const upDays = recentPrices.filter((p, i, arr) => i > 0 && p.close > arr[i-1].close).length;
   
@@ -47,21 +69,21 @@ const generateSentimentAnalysis = (changePercent: number, history: PricePoint[])
   };
 };
 
-export const fetchStockData = async (ticker: string): Promise<StockDetails | null> => {
+export const fetchStockData = async (ticker: string, range: string = '1y', interval: string = '1d'): Promise<StockDetails | null> => {
   if (!ticker) return null;
   
   const rawSymbol = ticker.toUpperCase().trim();
-  let chartResult = await fetchYahoo(rawSymbol, '1d', '1mo'); 
-  let historyResult = await fetchYahoo(rawSymbol, '1d', '7d'); 
+  let chartResult = await fetchYahoo(rawSymbol, interval, range); 
+  let historyResult = await fetchYahoo(rawSymbol, '1d', '7d'); // For weekly table
 
   if (!chartResult && !rawSymbol.includes('.')) {
     const nsSymbol = `${rawSymbol}.NS`;
-    chartResult = await fetchYahoo(nsSymbol, '1d', '1mo');
+    chartResult = await fetchYahoo(nsSymbol, interval, range);
     historyResult = await fetchYahoo(nsSymbol, '1d', '7d');
     
     if (!chartResult) {
       const boSymbol = `${rawSymbol}.BO`;
-      chartResult = await fetchYahoo(boSymbol, '1d', '1mo');
+      chartResult = await fetchYahoo(boSymbol, interval, range);
       historyResult = await fetchYahoo(boSymbol, '1d', '7d');
     }
   }
@@ -88,7 +110,7 @@ export const fetchStockData = async (ticker: string): Promise<StockDetails | nul
     const timestamps = chartResult.timestamp || [];
     const quotes = chartResult.indicators.quote[0];
     const history: PricePoint[] = timestamps.map((t: number, i: number) => ({
-      date: new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      time: t,
       open: parseFloat((quotes.open[i] || 0).toFixed(2)),
       high: parseFloat((quotes.high[i] || 0).toFixed(2)),
       low: parseFloat((quotes.low[i] || 0).toFixed(2)),
@@ -113,7 +135,7 @@ export const fetchStockData = async (ticker: string): Promise<StockDetails | nul
       const close = hQuotes.close[i] || 0;
       const rowPrevClose = i > 0 ? hQuotes.close[i-1] : hQuotes.open[i];
       return {
-        date: new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        date: new Date(t * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
         open: parseFloat(open.toFixed(2)),
         high: parseFloat((hQuotes.high[i] || 0).toFixed(2)),
         low: parseFloat((hQuotes.low[i] || 0).toFixed(2)),

@@ -1,124 +1,197 @@
 
-import React from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Cell
-} from 'recharts';
+import React, { useEffect, useRef, useState, memo } from 'react';
+import { createChart, IChartApi, ISeriesApi, UTCTimestamp, MouseEventParams } from 'lightweight-charts';
 import { PricePoint } from '../types.ts';
+
+type Timeframe = '15m' | '1D';
 
 interface TerminalChartProps {
   data: PricePoint[];
+  isModal: boolean;
+  onTimeframeChange?: (timeframe: Timeframe) => void;
+  activeTimeframe?: Timeframe;
 }
 
-const CandleShape = (props: any) => {
-  const { x, y, width, height, open, close, high, low, color } = props;
-  const centerX = x + width / 2;
-  const bodyMin = Math.min(open, close);
-  const bodyMax = Math.max(open, close);
-  const bodyRange = bodyMax - bodyMin;
-  const totalRange = high - low;
-  if (totalRange <= 0) return null;
-  const pixelPerUnit = height / (bodyRange || 0.001);
-  const highY = y - (high - bodyMax) * pixelPerUnit;
-  const lowY = y + height + (bodyMin - low) * pixelPerUnit;
-  
-  return (
-    <g>
-      <line x1={centerX} y1={highY} x2={centerX} y2={lowY} stroke={color} strokeWidth={1.5} strokeOpacity={0.8} />
-      <rect x={x} y={y} width={width} height={Math.max(1, height)} fill={color} fillOpacity={0.9} />
-    </g>
-  );
-};
+interface TooltipData {
+  visible: boolean;
+  x: number;
+  y: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  date?: string;
+}
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    const candle = payload[0].payload;
-    const isUp = candle.close >= candle.open;
-    const colorClass = isUp ? 'text-emerald-400' : 'text-rose-500';
+const TerminalChart: React.FC<TerminalChartProps> = ({ data, isModal, onTimeframeChange, activeTimeframe }) => {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const [tooltip, setTooltip] = useState<TooltipData>({ visible: false, x: 0, y: 0 });
 
-    return (
-      <div className="bg-[#050608]/98 border-2 border-white/50 p-4 rounded-xl shadow-2xl backdrop-blur-3xl min-w-[140px] z-[100]">
-        <p className="text-[10px] font-black text-white/60 uppercase mb-3 border-b border-white/20 pb-2 tracking-widest text-center">{label}</p>
-        <div className="space-y-2">
-          {[
-            { label: 'Open', val: candle.open, color: 'text-white/80' },
-            { label: 'High', val: candle.high, color: 'text-emerald-400' },
-            { label: 'Low', val: candle.low, color: 'text-rose-500' },
-            { label: 'Close', val: candle.close, color: colorClass, bold: true }
-          ].map((item, i) => (
-            <div key={i} className="flex justify-between items-center gap-6">
-              <span className="text-[8px] font-black text-white/40 uppercase">{item.label}</span>
-              <span className={`text-[12px] font-bold tabular-nums ${item.color || 'text-white/95'} ${item.bold ? 'font-black' : ''}`}>
-                {item.val.toFixed(2)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+  useEffect(() => {
+    if (!chartContainerRef.current || data.length === 0) return;
+
+    chartRef.current = createChart(chartContainerRef.current, {
+      layout: {
+        background: { color: 'transparent' },
+        textColor: 'rgba(255, 255, 255, 0.7)',
+      },
+      grid: {
+        vertLines: { color: 'rgba(255, 255, 255, 0.15)' },
+        horzLines: { color: 'rgba(255, 255, 255, 0.15)' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+      },
+      crosshair: {
+        mode: 1,
+      },
+      handleScroll: isModal,
+      handleScale: isModal,
+    });
+    
+    seriesRef.current = chartRef.current.addCandlestickSeries({
+      upColor: '#22c55e',
+      downColor: '#ef4444',
+      borderDownColor: '#ef4444',
+      borderUpColor: '#22c55e',
+      wickDownColor: '#ef4444',
+      wickUpColor: '#22c55e',
+    });
+
+    const formattedData = data.map(d => ({
+      time: d.time as UTCTimestamp,
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
+    })).sort((a, b) => a.time - b.time);
+    
+    seriesRef.current.setData(formattedData);
+    chartRef.current.timeScale().fitContent();
+
+    const handleResize = () => chartRef.current?.applyOptions({ width: chartContainerRef.current?.clientWidth });
+    window.addEventListener('resize', handleResize);
+    
+    const crosshairMoveHandler = (param: MouseEventParams) => {
+      if (!param.point || param.time === undefined || !seriesRef.current) {
+        setTooltip(prev => ({ ...prev, visible: false }));
+        return;
+      }
+
+      const seriesData = param.seriesData.get(seriesRef.current);
+
+      if (seriesData) {
+        const candleData = seriesData as { open: number; high: number; low: number; close: number; time: UTCTimestamp };
+        const date = new Date(candleData.time * 1000);
+        const formattedDate = activeTimeframe === '1D' 
+          ? date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+          : date.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        setTooltip({
+          visible: true,
+          x: param.point.x,
+          y: param.point.y,
+          open: candleData.open,
+          high: candleData.high,
+          low: candleData.low,
+          close: candleData.close,
+          date: formattedDate
+        });
+      } else {
+        setTooltip(prev => ({ ...prev, visible: false }));
+      }
+    };
+
+    chartRef.current.subscribeCrosshairMove(crosshairMoveHandler);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (chartRef.current) {
+        chartRef.current.unsubscribeCrosshairMove(crosshairMoveHandler);
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!chartRef.current || !seriesRef.current || !data.length) return;
+    const formattedData = data.map(d => ({
+        time: d.time as UTCTimestamp,
+        open: d.open, high: d.high, low: d.low, close: d.close
+    })).sort((a, b) => a.time - b.time);
+    seriesRef.current.setData(formattedData);
+    chartRef.current.timeScale().fitContent();
+  }, [data]);
+
+  const timeFrameButtonClasses = (timeframe: Timeframe) => 
+    `px-2 py-1 text-[9px] font-black uppercase tracking-wider rounded-md border-2 transition-all ${activeTimeframe === timeframe ? 'bg-white/15 border-white/50 text-white' : 'border-transparent text-white/50 hover:text-white'}`;
+
+  const tooltipStyle: React.CSSProperties = {
+    position: 'absolute',
+    zIndex: 20,
+    top: `${tooltip.y + 15}px`,
+    left: `${tooltip.x + 15}px`,
+    pointerEvents: 'none'
+  };
+
+  if (chartContainerRef.current) {
+    const chartRect = chartContainerRef.current.getBoundingClientRect();
+    const tooltipWidth = 150; 
+    if (tooltip.x + 15 + tooltipWidth > chartRect.width) {
+        tooltipStyle.left = `${tooltip.x - 15 - tooltipWidth}px`;
+    }
   }
-  return null;
-};
-
-const TerminalChart: React.FC<TerminalChartProps> = ({ data }) => {
-  if (!data || data.length === 0) return null;
-
-  const chartData = data.map(d => ({
-    ...d,
-    body: [Math.min(d.open, d.close), Math.max(d.open, d.close) + (d.open === d.close ? 0.01 : 0)],
-    color: d.close >= d.open ? '#22c55e' : '#ef4444', 
-  }));
-
-  const allValues = data.flatMap(d => [d.low, d.high]);
-  const minP = Math.min(...allValues);
-  const maxP = Math.max(...allValues);
-  const range = maxP - minP;
-  const padding = range * 0.15;
 
   return (
-    <div className="w-full h-[320px] md:h-[420px] glossy-card !border-white/50 p-4 md:p-6 rounded-2xl relative group shadow-2xl bg-black/30">
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-black/50 px-3 py-1.5 rounded-xl border border-white/20 backdrop-blur-lg">
-         <div className="w-2 h-2 rounded-full bg-pink-500 shadow-[0_0_12px_#ec4899] animate-pulse" />
-         <span className="text-[8px] font-black text-white tracking-[0.2em] uppercase">Market Depth</span>
-      </div>
+    <div className="w-full h-full flex flex-col relative">
+      {isModal && (
+        <div className="absolute top-0 left-0 right-0 z-10 p-2 flex items-center justify-end bg-transparent">
+          <div className="flex items-center gap-1 glossy-card !bg-black/40 !rounded-lg p-1">
+             {(['15m', '1D'] as Timeframe[]).map(tf => (
+                <button key={tf} onClick={() => onTimeframeChange?.(tf)} className={timeFrameButtonClasses(tf)}>{tf}</button>
+             ))}
+          </div>
+        </div>
+      )}
 
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} margin={{ top: 50, right: 0, left: -25, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff40" vertical={false} />
-          <XAxis 
-            dataKey="date" 
-            axisLine={false} 
-            tickLine={false} 
-            tick={{ fill: '#ffffffa0', fontSize: 10, fontWeight: 800 }}
-            interval={Math.ceil(data.length / (window.innerWidth < 768 ? 6 : 10))}
-          />
-          <YAxis 
-            domain={[minP - padding, maxP + padding]} 
-            axisLine={false} 
-            tickLine={false} 
-            tick={{ fill: '#ffffffa0', fontSize: 10, fontWeight: 800 }}
-            orientation="right"
-            tickFormatter={(value) => value.toFixed(2)}
-          />
-          <Tooltip 
-            content={<CustomTooltip />} 
-            cursor={{ fill: 'rgba(255,255,255,0.03)' }} 
-            isAnimationActive={false}
-            trigger="click"
-          />
-          <Bar dataKey="body" shape={<CandleShape />} barSize={window.innerWidth < 768 ? 8 : 12} animationDuration={1000}>
-            {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+      {tooltip.visible && (
+        <div
+          style={tooltipStyle}
+          className="w-[150px] p-3 rounded-xl glossy-card !bg-black/80 !border-white/30"
+        >
+          <div className="font-bold text-white/80 mb-2 text-center text-[11px]">{tooltip.date}</div>
+          <div className="space-y-1 text-[10px]">
+            <div className="flex justify-between gap-4">
+              <span className="text-white/60">Open:</span>
+              <span className="font-bold tabular-nums">{tooltip.open?.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/60">High:</span>
+              <span className="font-bold text-emerald-400 tabular-nums">{tooltip.high?.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/60">Low:</span>
+              <span className="font-bold text-rose-500 tabular-nums">{tooltip.low?.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/60">Close:</span>
+              <span className="font-bold tabular-nums">{tooltip.close?.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div ref={chartContainerRef} className="w-full flex-1" />
     </div>
   );
 };
 
-export default TerminalChart;
+export default memo(TerminalChart);

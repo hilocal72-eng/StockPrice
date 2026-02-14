@@ -53,3 +53,9 @@ export interface SearchResult {
   name: string;
   exchange: string;
 }
+
+export interface TrendLine {
+  id: string;
+  p1: { time: number; price: number };
+  p2: { time: number; price: number };
+}

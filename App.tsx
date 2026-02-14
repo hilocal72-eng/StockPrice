@@ -339,7 +339,7 @@ const App: React.FC = () => {
             </div>
             <div className="flex-1 p-4">
               <TerminalChart 
-                key={`${stockData.info.ticker}-${currentTimeframe}`}
+                key={stockData.info.ticker}
                 ticker={stockData.info.ticker}
                 data={stockData.history} 
                 isModal={true} 
@@ -387,7 +387,7 @@ const App: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Search by name or symbol..."
-                  className="w-full bg-white/[0.08] border border-white/40 rounded-xl py-3 pl-5 pr-12 text-[12px] font-bold text-white placeholder-white/50 focus:outline-none focus:border-pink-500/80 transition-all shadow-inner"
+                  className="w-full bg-white/[0.08] border border-white/40 rounded-xl py-3 pl-5 pr-12 text-[12px] font-bold text-white placeholder-white/30 focus:outline-none focus:border-pink-500/80 transition-all shadow-inner"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />

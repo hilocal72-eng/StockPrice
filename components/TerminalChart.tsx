@@ -27,20 +27,19 @@ interface TooltipData {
   date?: string;
 }
 
-const STORAGE_PREFIX_HL = 'stkr_drawings_';
-const STORAGE_PREFIX_TL = 'stkr_trendlines_';
+const STORAGE_PREFIX_HL = 'stkr_drawings_v4_'; // Global per ticker
+const STORAGE_PREFIX_TL = 'stkr_trendlines_v4_'; // Specific per ticker + timeframe
 
-// Professional Blue Theme for Trendlines
-const TRENDLINE_COLOR = '#3b82f6'; // Bright Blue
+const TRENDLINE_COLOR = '#3b82f6'; 
 const TRENDLINE_HANDLE_COLOR = 'rgba(59, 130, 246, 0.6)';
-const HL_LINE_COLOR = '#eab308'; // Yellow for H-Lines
+const HL_LINE_COLOR = '#eab308'; 
 
 const TerminalChart: React.FC<TerminalChartProps> = ({ 
   ticker,
   data, 
   isModal, 
   onTimeframeChange, 
-  activeTimeframe,
+  activeTimeframe = '1D',
   activeTool = null,
   clearLinesSignal = 0
 }) => {
@@ -56,15 +55,13 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
   const [pendingTrendLine, setPendingTrendLine] = useState<{ p1: { time: number; price: number }; p2: { x: number; y: number } } | null>(null);
   const [draggingHandle, setDraggingHandle] = useState<{ lineId: string; point: 'p1' | 'p2' } | null>(null);
   
-  // Refs for stable event listener access
   const activeToolRef = useRef<DrawingTool>(activeTool);
   const pendingTrendLineRef = useRef(pendingTrendLine);
   const hLinesRef = useRef(hLines);
   const tLinesRef = useRef(tLines);
   const isAdjustingRef = useRef(false);
-  const lastCrosshairRef = useRef<{ x: number, y: number, time?: number } | null>(null);
 
-  // Sync refs
+  // Sync refs for event handlers
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
   useEffect(() => { pendingTrendLineRef.current = pendingTrendLine; }, [pendingTrendLine]);
   useEffect(() => { hLinesRef.current = hLines; }, [hLines]);
@@ -76,26 +73,29 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
   const saveDrawings = useCallback((hl: number[], tl: TrendLine[]) => {
     if (!ticker || !isModal) return;
     localStorage.setItem(`${STORAGE_PREFIX_HL}${ticker}`, JSON.stringify(hl));
-    localStorage.setItem(`${STORAGE_PREFIX_TL}${ticker}`, JSON.stringify(tl));
-  }, [ticker, isModal]);
+    localStorage.setItem(`${STORAGE_PREFIX_TL}${ticker}_${activeTimeframe}`, JSON.stringify(tl));
+  }, [ticker, isModal, activeTimeframe]);
 
   const loadDrawings = useCallback(() => {
     if (!ticker || !isModal) return { hl: [], tl: [] };
     const savedHL = localStorage.getItem(`${STORAGE_PREFIX_HL}${ticker}`);
-    const savedTL = localStorage.getItem(`${STORAGE_PREFIX_TL}${ticker}`);
+    const savedTL = localStorage.getItem(`${STORAGE_PREFIX_TL}${ticker}_${activeTimeframe}`);
     return {
       hl: savedHL ? JSON.parse(savedHL) : [],
       tl: savedTL ? JSON.parse(savedTL) : []
     };
-  }, [ticker, isModal]);
+  }, [ticker, isModal, activeTimeframe]);
 
+  // Handle drawings loading
   useEffect(() => {
     if (isModal) {
       const { hl, tl } = loadDrawings();
       setHLines(hl);
       setTLines(tl);
+      // Trigger a coordinate refresh after the state updates
+      requestAnimationFrame(forceUpdate);
     }
-  }, [ticker, isModal, loadDrawings]);
+  }, [ticker, activeTimeframe, isModal, loadDrawings, forceUpdate]);
 
   useEffect(() => {
     if (clearLinesSignal > 0 && isModal) {
@@ -105,6 +105,16 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
     }
   }, [clearLinesSignal, isModal, saveDrawings]);
 
+  // Chart UI interaction management
+  useEffect(() => {
+    if (!chartRef.current) return;
+    chartRef.current.applyOptions({
+      handleScroll: isModal && !activeTool,
+      handleScale: isModal && !activeTool,
+    });
+  }, [activeTool, isModal]);
+
+  // Horizontal line sync
   useEffect(() => {
     if (!seriesRef.current) return;
     hLineObjectsRef.current.forEach(line => seriesRef.current?.removePriceLine(line));
@@ -118,29 +128,21 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
     });
   }, [hLines, isModal]);
 
-  useEffect(() => {
-    const handleGlobalMouseUp = () => {
-      if (draggingHandle) {
-        setDraggingHandle(null);
-        setTimeout(() => { isAdjustingRef.current = false; }, 50);
-        saveDrawings(hLinesRef.current, tLinesRef.current);
-      }
-    };
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [draggingHandle, saveDrawings]);
-
+  // Main Chart Logic
   useEffect(() => {
     if (!chartContainerRef.current || data.length === 0) return;
 
     const chart = createChart(chartContainerRef.current, {
       layout: { background: { color: 'transparent' }, textColor: 'rgba(255, 255, 255, 0.7)' },
       grid: { vertLines: { color: 'rgba(255, 255, 255, 0.1)' }, horzLines: { color: 'rgba(255, 255, 255, 0.1)' } },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: 'rgba(255, 255, 255, 0.2)' },
+      timeScale: { 
+        timeVisible: true, 
+        secondsVisible: false, 
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        shiftVisibleRangeOnNewBar: true,
+      },
       rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.2)' },
       crosshair: { mode: 1 },
-      handleScroll: isModal,
-      handleScale: isModal,
     });
     
     chartRef.current = chart;
@@ -155,9 +157,16 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
     
     series.setData(formattedData);
     chart.timeScale().fitContent();
+
+    // Critical: Force a re-render once the timescale settles
+    setTimeout(forceUpdate, 100);
+
     chart.timeScale().subscribeVisibleTimeRangeChange(forceUpdate);
 
-    const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
+    const handleResize = () => {
+        chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
+        forceUpdate();
+    };
     window.addEventListener('resize', handleResize);
     
     const crosshairMoveHandler = (param: MouseEventParams) => {
@@ -165,12 +174,6 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
         setTooltip(prev => ({ ...prev, visible: false }));
         return;
       }
-
-      lastCrosshairRef.current = {
-        x: param.point.x,
-        y: param.point.y,
-        time: param.time as number
-      };
 
       const seriesData = param.seriesData.get(seriesRef.current);
       if (seriesData) {
@@ -200,9 +203,7 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
       }
     };
 
-    // Native mousedown listener for robust Click 1 / Click 2 logic
-    // subscribeClick is too sensitive to mouse movement (considered a drag)
-    const onNativeMouseDown = (e: MouseEvent) => {
+    const onNativePointerDown = (e: PointerEvent) => {
       if (isAdjustingRef.current) return;
       if (!isModal || !seriesRef.current || !chartRef.current || !activeToolRef.current) return;
 
@@ -215,7 +216,6 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
       const price = seriesRef.current.coordinateToPrice(y);
       let mouseTime = chartRef.current.timeScale().coordinateToTime(x) as number;
 
-      // Handle future points
       if (!mouseTime && data.length > 0) {
         mouseTime = data[data.length - 1].time;
       }
@@ -228,7 +228,7 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
         const currentHLines = hLinesRef.current;
         const hitIndex = currentHLines.findIndex(p => {
           const ly = seriesRef.current!.priceToCoordinate(p);
-          return ly !== null && Math.abs(y - ly) < 10;
+          return ly !== null && Math.abs(y - ly) < 15; 
         });
 
         if (hitIndex !== -1) {
@@ -245,10 +245,8 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
       if (tool === 'trend') {
         const pending = pendingTrendLineRef.current;
         if (!pending) {
-          // START DRAWING (Click 1)
           setPendingTrendLine({ p1: { time: mouseTime, price }, p2: { x, y } });
         } else {
-          // FINISH DRAWING (Click 2)
           const newLine: TrendLine = {
             id: `tl-${Date.now()}`,
             p1: pending.p1,
@@ -263,19 +261,32 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
     };
 
     chart.subscribeCrosshairMove(crosshairMoveHandler);
-    chartContainerRef.current?.addEventListener('mousedown', onNativeMouseDown);
+    chartContainerRef.current?.addEventListener('pointerdown', onNativePointerDown);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       if (chartRef.current) {
         chartRef.current.timeScale().unsubscribeVisibleTimeRangeChange(forceUpdate);
         chartRef.current.unsubscribeCrosshairMove(crosshairMoveHandler);
-        chartContainerRef.current?.removeEventListener('mousedown', onNativeMouseDown);
+        chartContainerRef.current?.removeEventListener('pointerdown', onNativePointerDown);
         chartRef.current.remove();
         chartRef.current = null;
       }
     };
-  }, [isModal, data, ticker, forceUpdate, activeTimeframe]);
+  }, [isModal, data, ticker, activeTimeframe, forceUpdate, saveDrawings]);
+
+  // Global PointerUp for ending drag sessions
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      if (draggingHandle) {
+        setDraggingHandle(null);
+        setTimeout(() => { isAdjustingRef.current = false; }, 50);
+        saveDrawings(hLinesRef.current, tLinesRef.current);
+      }
+    };
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    return () => window.removeEventListener('pointerup', handleGlobalPointerUp);
+  }, [draggingHandle, saveDrawings]);
 
   const svgLines = useMemo(() => {
     if (!seriesRef.current || !chartRef.current) return [];
@@ -299,7 +310,7 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
   };
 
   return (
-    <div className={`w-full h-full flex flex-col relative ${activeTool ? 'cursor-crosshair' : ''}`}>
+    <div className={`w-full h-full flex flex-col relative ${activeTool ? 'cursor-crosshair touch-none' : ''}`}>
       {tooltip.visible && !activeTool && (
         <div style={tooltipStyle} className="w-[150px] p-3 rounded-xl glossy-card !bg-black/80 !border-white/30">
           <div className="font-bold text-white/80 mb-2 text-center text-[11px]">{tooltip.date}</div>
@@ -325,16 +336,12 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
           className="absolute inset-0 z-10 w-full h-full overflow-hidden pointer-events-none"
         >
           {svgLines.map(l => (
-            <g 
-              key={l.id} 
-              // Very important: if we are in the middle of drawing a new line, existing lines must be inert
-              className={`${pendingTrendLine ? 'pointer-events-none' : 'pointer-events-auto'} group`}
-            >
+            <g key={l.id} className={`${pendingTrendLine ? 'pointer-events-none' : 'pointer-events-auto'} group`}>
               <line 
                 x1={l.x1!} y1={l.y1!} x2={l.x2!} y2={l.y2!} 
                 stroke={TRENDLINE_COLOR} strokeWidth="2" 
                 className="cursor-pointer"
-                onClick={(e) => { 
+                onPointerDown={(e) => { 
                   if(activeTool === 'trend') { 
                     e.stopPropagation(); 
                     deleteTrendLine(l.id); 
@@ -344,20 +351,20 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
               {activeTool === 'trend' && (
                 <>
                   <circle 
-                    cx={l.x1!} cy={l.y1!} r="6" 
+                    cx={l.x1!} cy={l.y1!} r="10" 
                     fill={TRENDLINE_HANDLE_COLOR} stroke="white" strokeWidth="1.5" 
-                    className="cursor-move opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) => { 
+                    className="cursor-move opacity-40 group-hover:opacity-100 transition-opacity"
+                    onPointerDown={(e) => { 
                       e.stopPropagation(); 
                       isAdjustingRef.current = true;
                       setDraggingHandle({ lineId: l.id, point: 'p1' }); 
                     }}
                   />
                   <circle 
-                    cx={l.x2!} cy={l.y2!} r="6" 
+                    cx={l.x2!} cy={l.y2!} r="10" 
                     fill={TRENDLINE_HANDLE_COLOR} stroke="white" strokeWidth="1.5" 
-                    className="cursor-move opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) => { 
+                    className="cursor-move opacity-40 group-hover:opacity-100 transition-opacity"
+                    onPointerDown={(e) => { 
                       e.stopPropagation(); 
                       isAdjustingRef.current = true;
                       setDraggingHandle({ lineId: l.id, point: 'p2' }); 
@@ -368,7 +375,6 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
             </g>
           ))}
 
-          {/* Drawing Preview Line - Dotted and Blue */}
           {pendingTrendLine && (
             <line 
               x1={chartRef.current?.timeScale().timeToCoordinate(pendingTrendLine.p1.time as UTCTimestamp) || 0} 

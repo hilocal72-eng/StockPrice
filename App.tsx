@@ -255,7 +255,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Fix: Removed handleSelectAndSearch from its own dependency array to fix "used before its declaration" error.
   const handleSelectAndSearch = useCallback((ticker: string) => {
     setSearchTerm('');
     setSearchResults([]);
@@ -280,7 +279,6 @@ const App: React.FC = () => {
     
     setError(null);
     try {
-      // Auto-request push if not yet enabled
       if (isPushSupported() && getNotificationPermission() === 'default') {
         const perm = await requestNotificationPermission();
         setPushStatus(perm);
@@ -338,7 +336,6 @@ const App: React.FC = () => {
     getAnonymousId();
     fetchUserAlerts().then(alerts => setUserAlerts(Array.isArray(alerts) ? alerts : []));
     
-    // Check push status
     if (isPushSupported()) {
       setPushStatus(getNotificationPermission());
       getPushSubscription().then(sub => setIsPushSubscribed(!!sub));
@@ -414,7 +411,28 @@ const App: React.FC = () => {
       <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-32 md:pb-6 p-4 md:p-6 relative z-10 bg-black/10">
         <div className="max-w-6xl mx-auto space-y-3">
           <header className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex md:hidden items-center gap-3 w-full mb-1"><div className="bg-pink-600 w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg border border-white/30"><TrendingUp size={16} strokeWidth={4} /></div><h1 className="text-xl font-black text-white tracking-tighter uppercase">Stocker</h1></div>
+            {activeView === 'dashboard' && (
+              <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-1">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                    className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.8)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-60"
+                  />
+                  <div className="relative flex items-center gap-3 px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10">
+                    <div className="p-2 rounded-lg bg-pink-600 text-white shadow-[0_0_15px_rgba(236,72,153,0.4)] border border-white/20">
+                       <TrendingUp size={16} strokeWidth={4} />
+                    </div>
+                    <div className="flex flex-col">
+                       <h1 className="text-sm font-black text-white uppercase tracking-[0.3em] leading-tight">Stocker</h1>
+                       <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.4em]">Professional Analytics</span>
+                    </div>
+                    <div className="ml-auto flex items-center gap-4 text-white/30 text-[8px] font-black uppercase tracking-wider">
+                       <div className="hidden sm:flex items-center gap-2"><ShieldCheck size={12} className="text-emerald-500/60" /><span></span></div>
+                       <div className="flex items-center gap-2"><Activity size={12} className="text-pink-500/60" /><span></span></div>
+                    </div>
+                  </div>
+              </div>
+            )}
             {activeView === 'dashboard' && (
               <div className="w-full max-sm relative group" onFocus={() => setIsSearchFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsSearchFocused(false); }}>
                 <form className="relative" onSubmit={(e) => { e.preventDefault(); handleSelectAndSearch(searchResults.length > 0 ? searchResults[0].symbol : searchTerm); }}>
@@ -424,7 +442,6 @@ const App: React.FC = () => {
                 <AnimatePresence>{isSearchFocused && searchResults.length > 0 && (<motion.ul initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-full mt-2 w-full glossy-card !border-white/40 rounded-xl overflow-hidden z-50 p-1">{searchResults.map((result) => (<li key={result.symbol} onMouseDown={() => handleSelectAndSearch(result.symbol)} className="p-3 hover:bg-white/10 rounded-lg cursor-pointer transition-colors"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white uppercase">{result.symbol}</span><span className="text-[9px] font-bold text-white/40 px-2 py-0.5 bg-white/5 rounded">{result.exchange}</span></div><p className="text-[10px] text-white/60 mt-1 truncate">{result.name}</p></li>))}</motion.ul>)}</AnimatePresence>
               </div>
             )}
-            <div className="hidden sm:flex items-center gap-5 text-white/30 text-[8px] font-black uppercase tracking-wider"><div className="flex items-center gap-2"><ShieldCheck size={12} className="text-emerald-500/60" /><span>Verified</span></div><div className="flex items-center gap-2"><Activity size={12} className="text-pink-500/60" /><span>Live Data</span></div></div>
           </header>
 
           {error && (<div className="px-4 py-3 border-2 border-rose-500/60 bg-rose-500/15 text-rose-400 text-[11px] font-black rounded-xl flex justify-between items-center animate-in slide-in-from-top-2 duration-300"><div className="flex items-center gap-2"><Info size={14} /><span>{error}</span></div><button onClick={() => setError(null)} className="p-1 hover:bg-rose-500/20 rounded-lg"><X size={16} /></button></div>)}
@@ -460,6 +477,27 @@ const App: React.FC = () => {
             </div>
           ) : activeView === 'favorites' ? (
             <div className="space-y-4 animate-in fade-in duration-500">
+               <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-4">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                    className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.6)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-40"
+                  />
+                  <div className="relative flex items-center gap-3 px-3 py-2 bg-black/80 backdrop-blur-xl rounded-[calc(0.75rem-1px)] border border-white/5">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-pink-500/20 to-transparent border border-pink-500/40 text-pink-500 shadow-[0_0_12px_rgba(236,72,153,0.15)]">
+                       <Heart size={14} strokeWidth={2.5} />
+                    </div>
+                    <div className="flex flex-col">
+                       <h2 className="text-[10px] font-black text-white uppercase tracking-[0.25em] leading-tight">Watchlist</h2>
+                       <span className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Monitored Assets</span>
+                    </div>
+                    <div className="ml-auto hidden sm:flex items-center gap-1.5 opacity-30">
+                       <div className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse" />
+                       <span className="text-[7px] font-black text-white uppercase tracking-widest">{favorites.length} Symbols</span>
+                    </div>
+                  </div>
+               </div>
+
                <div className="flex items-center p-0.5 bg-white/[0.03] border border-white/30 rounded-xl max-w-2xl">
                   <div className="relative flex-1 group min-w-0 opacity-80"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-pink-500 transition-colors" size={12} /><input type="text" placeholder="Filter favorites..." className="w-full bg-transparent py-2.5 pl-10 pr-4 text-[11px] font-black uppercase tracking-wider text-white placeholder-white/20 focus:outline-none transition-all" value={favSearchTerm} onChange={(e) => setFavSearchTerm(e.target.value)} /></div>
                   <div className="w-[1px] h-4 bg-white/20 mx-1" />
@@ -472,15 +510,27 @@ const App: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4 animate-in fade-in duration-500">
-               <div className="flex items-center gap-3 px-1 mb-4">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-yellow-500/20 to-transparent border border-yellow-500/30 text-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.15)]">
-                     <BellRing size={12} strokeWidth={2} />
-                  </div>
-                  <div className="flex flex-col">
-                     <h2 className="text-xs font-black text-white uppercase tracking-[0.25em] leading-tight">Price Alerts</h2>
-                     <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest">Real-time Monitoring</span>
+               <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-4">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                    className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(234,179,8,0.1)_90deg,rgba(234,179,8,0.6)_180deg,rgba(234,179,8,0.1)_270deg,transparent_360deg)] opacity-40"
+                  />
+                  <div className="relative flex items-center gap-3 px-3 py-2 bg-black/80 backdrop-blur-xl rounded-[calc(0.75rem-1px)] border border-white/5">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-yellow-500/20 to-transparent border border-yellow-500/40 text-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.15)]">
+                       <BellRing size={14} strokeWidth={2.5} />
+                    </div>
+                    <div className="flex flex-col">
+                       <h2 className="text-[10px] font-black text-white uppercase tracking-[0.25em] leading-tight">Price Alerts</h2>
+                       <span className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Active Monitor</span>
+                    </div>
+                    <div className="ml-auto hidden sm:flex items-center gap-1.5 opacity-30">
+                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                       <span className="text-[7px] font-black text-white uppercase tracking-widest">System Online</span>
+                    </div>
                   </div>
                </div>
+
                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 pt-2">
                   {Array.isArray(userAlerts) && userAlerts.map(alert => (
                     <motion.div 
@@ -528,7 +578,7 @@ const App: React.FC = () => {
 
                         <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5 flex items-end justify-between relative z-10">
                           <div className="flex flex-col">
-                             <div className="flex items-center gap-1 text-[7px] font-black text-emerald/40 uppercase tracking-widest mb-0.5">
+                             <div className="flex items-center gap-1 text-[7px] font-black text-white/30 uppercase tracking-widest mb-0.5">
                                {alert.condition === 'above' ? 'Target Above' : 'Target Below'}
                              </div>
                              <div className="text-2xl font-black text-white tabular-nums tracking-tighter leading-none">
@@ -541,7 +591,7 @@ const App: React.FC = () => {
                                 {alert.condition === 'above' ? <ArrowUpRight size={8} /> : <ArrowDownRight size={8} />}
                                 Threshold
                              </div>
-                             <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest block">
+                             <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest block">
                                Notify on breach
                              </span>
                           </div>

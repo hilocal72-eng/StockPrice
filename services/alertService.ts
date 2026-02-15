@@ -4,10 +4,27 @@ import { Alert } from '../types.ts';
 // Cloudflare Worker URL
 const ALERT_WORKER_URL = 'https://stocker-api.hilocal72.workers.dev';
 
+/**
+ * Fallback UUID generator for environments where crypto.randomUUID might be missing
+ */
+const generateFallbackUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 export const getAnonymousId = (): string => {
   let id = localStorage.getItem('stkr_anon_id');
   if (!id) {
-    id = crypto.randomUUID();
+    try {
+      id = (window.crypto && window.crypto.randomUUID) 
+        ? window.crypto.randomUUID() 
+        : generateFallbackUUID();
+    } catch (e) {
+      id = generateFallbackUUID();
+    }
     localStorage.setItem('stkr_anon_id', id);
   }
   return id;
@@ -16,7 +33,6 @@ export const getAnonymousId = (): string => {
 export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean> => {
   const anonId = getAnonymousId();
   try {
-    console.log('Attempting to create alert for:', alert.ticker);
     const response = await fetch(`${ALERT_WORKER_URL}/`, {
       method: 'POST',
       headers: {
@@ -27,27 +43,28 @@ export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean
     });
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Server responded with ${response.status}: ${errorText}`);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Alert creation failed:', response.status, errorData);
       return false;
     }
     
     return true;
   } catch (error) {
-    console.error('Network or CORS error creating alert:', error);
+    console.error('Network error creating alert:', error);
     return false;
   }
 };
 
 export const fetchUserAlerts = async (): Promise<Alert[]> => {
   const anonId = getAnonymousId();
+  if (!anonId) return [];
+
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${anonId}`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(anonId)}`, {
       method: 'GET',
     });
     
     if (!response.ok) {
-      console.error(`Failed to fetch alerts: ${response.status}`);
       return [];
     }
     
@@ -78,15 +95,26 @@ export const deleteAlert = async (id: number): Promise<boolean> => {
 export const saveSubscription = async (subscription: PushSubscription): Promise<boolean> => {
   const anonId = getAnonymousId();
   try {
+    // CRITICAL: PushSubscription objects must be converted to JSON explicitly
+    // otherwise JSON.stringify(subscription) returns "{}"
+    const subscriptionData = subscription.toJSON();
+    
     const response = await fetch(`${ALERT_WORKER_URL}/subscribe`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-User-ID': anonId,
       },
-      body: JSON.stringify(subscription),
+      body: JSON.stringify(subscriptionData),
     });
-    return response.ok;
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.error('Subscription save failed:', response.status, err);
+      return false;
+    }
+
+    return true;
   } catch (error) {
     console.error('Failed to save push subscription:', error);
     return false;

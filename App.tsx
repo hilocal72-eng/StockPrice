@@ -281,7 +281,10 @@ const App: React.FC = () => {
 
   // Robust Subscription Logic
   const handleEnsureSubscription = async () => {
-    if (!isPushSupported()) return false;
+    if (!isPushSupported()) {
+      setError("Push Manager is not supported on this device/browser.");
+      return false;
+    }
     
     setIsPushLoading(true);
     try {
@@ -292,14 +295,19 @@ const App: React.FC = () => {
         setPushStatus(result);
         if (result !== 'granted') return false;
       } else if (permission === 'denied') {
+        setError("Notifications blocked. Please reset site permissions in browser settings.");
         return false;
       }
       
       const success = await subscribeUser();
       setIsPushSubscribed(success);
+      if (!success) {
+        setError("Failed to register for push alerts. Check your connection.");
+      }
       return success;
     } catch (e) {
       console.error("Subscription flow error:", e);
+      setError("An error occurred while enabling notifications.");
       return false;
     } finally {
       setIsPushLoading(false);
@@ -312,8 +320,13 @@ const App: React.FC = () => {
     
     setError(null);
     try {
-      // Proactively ensure subscription is active
-      await handleEnsureSubscription();
+      // Proactively ensure subscription is active BEFORE saving alert
+      const subSuccess = await handleEnsureSubscription();
+      if (!subSuccess) {
+        // We warn the user, but we can still try to save the alert if they want
+        // though it won't trigger a push notification.
+        console.warn("Saving alert without an active push subscription.");
+      }
 
       const success = await createAlert({
         ticker: stockData.info.ticker,
@@ -370,6 +383,7 @@ const App: React.FC = () => {
         setIsPushSubscribed(!!sub);
         // If granted but no subscription record in browser, try to fix it automatically
         if (perm === 'granted' && !sub) {
+          console.log("Permission granted but no local subscription. Attempting auto-fix...");
           subscribeUser().then(success => setIsPushSubscribed(success));
         }
       });

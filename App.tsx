@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert } from './types.ts';
 import TerminalChart from './components/TerminalChart.tsx';
 import AIIntelligenceModal from './components/AIIntelligenceModal.tsx';
 import WatchlistPulseModal from './components/WatchlistPulseModal.tsx';
-import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
+import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert, sendTestNotification } from './services/alertService.ts';
 import { isPushSupported, getNotificationPermission, requestNotificationPermission, subscribeUser, unsubscribeUser, getPushSubscription } from './services/pushNotificationService.ts';
 
 type View = 'dashboard' | 'favorites' | 'alerts';
@@ -220,6 +220,7 @@ const App: React.FC = () => {
   // Alerts logic
   const [userAlerts, setUserAlerts] = useState<Alert[]>([]);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [isTestPushing, setIsTestPushing] = useState(false);
 
   // Push notification state
   const [pushStatus, setPushStatus] = useState<NotificationPermission>('default');
@@ -346,6 +347,19 @@ const App: React.FC = () => {
       setError("An unexpected error occurred while saving alert.");
       return false;
     }
+  };
+
+  const handleTestPush = async () => {
+    if (!isPushSubscribed) {
+      setError("Enable notifications before testing.");
+      return;
+    }
+    setIsTestPushing(true);
+    const success = await sendTestNotification();
+    if (!success) {
+      setError("Test push failed. Check Worker console.");
+    }
+    setIsTestPushing(false);
   };
 
   const handleDeleteAlert = async (id: number) => {
@@ -618,9 +632,21 @@ const App: React.FC = () => {
                        <h2 className="text-[10px] font-black text-white uppercase tracking-[0.25em] leading-tight">Price Alerts</h2>
                        <span className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Active Monitor</span>
                     </div>
-                    <div className="ml-auto hidden sm:flex items-center gap-1.5 opacity-30">
-                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                       <span className="text-[7px] font-black text-white uppercase tracking-widest">System Online</span>
+                    <div className="ml-auto flex items-center gap-2">
+                       <button 
+                        onClick={handleTestPush}
+                        disabled={isTestPushing || !isPushSubscribed}
+                        className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all shadow-lg ${
+                          isPushSubscribed ? 'bg-white/10 text-white border-white/40 hover:bg-white/20' : 'bg-white/5 text-white/20 border-white/10 cursor-not-allowed'
+                        }`}
+                       >
+                         {isTestPushing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                         Test Alert
+                       </button>
+                       <div className="hidden sm:flex items-center gap-1.5 opacity-30">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-[7px] font-black text-white uppercase tracking-widest">System Online</span>
+                       </div>
                     </div>
                   </div>
                </div>

@@ -33,7 +33,7 @@ export const getAnonymousId = (): string => {
 export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean> => {
   const anonId = getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(anonId)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -82,7 +82,7 @@ export const fetchUserAlerts = async (): Promise<Alert[]> => {
 export const deleteAlert = async (id: number): Promise<boolean> => {
   const anonId = getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/${id}`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/${id}?userId=${encodeURIComponent(anonId)}`, {
       method: 'DELETE',
       headers: {
         'X-User-ID': anonId,
@@ -95,13 +95,28 @@ export const deleteAlert = async (id: number): Promise<boolean> => {
   }
 };
 
+export const sendTestNotification = async (): Promise<boolean> => {
+  const anonId = getAnonymousId();
+  try {
+    const response = await fetch(`${ALERT_WORKER_URL}/test-push?userId=${encodeURIComponent(anonId)}`, {
+      method: 'POST',
+      headers: {
+        'X-User-ID': anonId,
+      },
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Failed to send test push:', error);
+    return false;
+  }
+};
+
 export const saveSubscription = async (subscription: PushSubscription): Promise<boolean> => {
   const anonId = getAnonymousId();
   try {
-    // CRITICAL: PushSubscription objects must be converted to JSON explicitly
     const subscriptionData = subscription.toJSON();
     
-    const response = await fetch(`${ALERT_WORKER_URL}/subscribe`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/subscribe?userId=${encodeURIComponent(anonId)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -126,7 +141,7 @@ export const saveSubscription = async (subscription: PushSubscription): Promise<
 export const removeSubscription = async (endpoint: string): Promise<boolean> => {
   const anonId = getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/unsubscribe`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/unsubscribe?userId=${encodeURIComponent(anonId)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

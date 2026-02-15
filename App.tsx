@@ -1,9 +1,12 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert } from './types.ts';
 import TerminalChart from './components/TerminalChart.tsx';
+import AIIntelligenceModal from './components/AIIntelligenceModal.tsx';
+import WatchlistPulseModal from './components/WatchlistPulseModal.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
 import { isPushSupported, getNotificationPermission, requestNotificationPermission, subscribeUser, unsubscribeUser, getPushSubscription } from './services/pushNotificationService.ts';
 
@@ -208,6 +211,8 @@ const App: React.FC = () => {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const debounceTimeout = useRef<number | null>(null);
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [isPulseModalOpen, setIsPulseModalOpen] = useState(false);
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [clearLinesSignal, setClearLinesSignal] = useState(0);
@@ -376,6 +381,20 @@ const App: React.FC = () => {
       <AnimatePresence>
         {selectedSentiment && <SentimentDetailModal ticker={selectedSentiment.ticker} analysis={selectedSentiment.analysis} onClose={() => setSelectedSentiment(null)} />}
         {isAlertModalOpen && stockData && <AlertModal ticker={stockData.info.ticker} currentPrice={stockData.info.currentPrice} onClose={() => setIsAlertModalOpen(false)} onSave={handleSaveAlert} />}
+        {isAIModalOpen && stockData && (
+          <AIIntelligenceModal 
+            ticker={stockData.info.ticker} 
+            currentPrice={stockData.info.currentPrice} 
+            history={stockData.history} 
+            onClose={() => setIsAIModalOpen(false)} 
+          />
+        )}
+        {isPulseModalOpen && favoriteStocksDetails.length > 0 && (
+          <WatchlistPulseModal
+            stocks={favoriteStocksDetails}
+            onClose={() => setIsPulseModalOpen(false)}
+          />
+        )}
       </AnimatePresence>
       
       <AnimatePresence>
@@ -465,7 +484,18 @@ const App: React.FC = () => {
                 <div className="flex flex-col items-start md:items-end gap-4 relative z-10 w-full md:w-auto">
                    <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto">
                       <span className="text-4xl md:text-5xl font-black text-white tabular-nums tracking-tighter leading-none">{stockData.info.currentPrice.toFixed(2)}</span>
-                      <SentimentIndicator analysis={stockData.info.sentiment} onClick={() => setSelectedSentiment({ ticker: stockData.info.ticker.split('.')[0], analysis: stockData.info.sentiment })} />
+                      <div className="flex flex-col items-center gap-2">
+                        <SentimentIndicator analysis={stockData.info.sentiment} onClick={() => setSelectedSentiment({ ticker: stockData.info.ticker.split('.')[0], analysis: stockData.info.sentiment })} />
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => setIsAIModalOpen(true)}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-600 to-cyan-500 text-white border border-white/40 shadow-lg shadow-pink-500/20"
+                        >
+                          <Sparkles size={12} fill="white" className="animate-pulse" />
+                          <span className="text-[8px] font-black uppercase tracking-widest">AI Analyst</span>
+                        </motion.button>
+                      </div>
                    </div>
                    <div className={`text-[12px] font-black tabular-nums px-4 py-1.5 rounded-xl border-2 self-start md:self-auto ${stockData.info.change >= 0 ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/15' : 'text-rose-500 border-rose-500/40 bg-rose-500/15'}`}>{stockData.info.change >= 0 ? <ArrowUpRight size={14} className="inline mr-1" /> : <ArrowDownRight size={14} className="inline mr-1" />}{Math.abs(stockData.info.change).toFixed(2)} ({stockData.info.changePercent.toFixed(2)}%)</div>
                 </div>
@@ -491,9 +521,22 @@ const App: React.FC = () => {
                        <h2 className="text-[10px] font-black text-white uppercase tracking-[0.25em] leading-tight">Watchlist</h2>
                        <span className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Monitored Assets</span>
                     </div>
-                    <div className="ml-auto hidden sm:flex items-center gap-1.5 opacity-30">
-                       <div className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse" />
-                       <span className="text-[7px] font-black text-white uppercase tracking-widest">{favorites.length} Symbols</span>
+                    <div className="ml-auto flex items-center gap-3">
+                       <motion.button
+                         whileHover={{ scale: 1.05 }}
+                         whileTap={{ scale: 0.95 }}
+                         onClick={() => setIsPulseModalOpen(true)}
+                         disabled={favorites.length === 0}
+                         className={`flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-cyan-500 text-white border border-white/40 shadow-lg shadow-pink-500/20 ${favorites.length === 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                       >
+                         <Wand2 size={12} fill="white" className="animate-pulse" />
+                         <span className="text-[9px] font-black uppercase tracking-widest hidden sm:inline">AI Pulse Check</span>
+                         <span className="text-[9px] font-black uppercase tracking-widest sm:hidden">Pulse</span>
+                       </motion.button>
+                       <div className="hidden sm:flex items-center gap-1.5 opacity-30">
+                          <div className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse" />
+                          <span className="text-[7px] font-black text-white uppercase tracking-widest">{favorites.length} Symbols</span>
+                       </div>
                     </div>
                   </div>
                </div>

@@ -68,3 +68,30 @@ export interface Alert {
   status: 'active' | 'triggered' | 'disabled';
   created_at?: string;
 }
+
+export interface AIAnalysisResult {
+  newsSummary: string;
+  newsBullets: string[];
+  newsSources: { title: string; uri: string }[];
+  supportLevels: number[];
+  resistanceLevels: number[];
+  patterns: string[];
+  technicalSummary: string;
+  signal: 'BUY' | 'SELL' | 'NO OPPORTUNITY';
+  signalReasoning: string;
+  tradeLevels?: {
+    entry: number;
+    target1: number;
+    target2: number;
+    stopLoss: number;
+  };
+}
+
+export interface WatchlistStockAnalysis {
+  symbol: string;
+  currentPrice: number;
+  signal: 'BUY' | 'SELL' | 'HOLD';
+  entry: number;
+  target1: number;
+  stopLoss: number;
+}

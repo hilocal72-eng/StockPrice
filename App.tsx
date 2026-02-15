@@ -636,7 +636,7 @@ const App: React.FC = () => {
                        <button 
                         onClick={handleTestPush}
                         disabled={isTestPushing || !isPushSubscribed}
-                        className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all shadow-lg ${
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all shadow-lg ${
                           isPushSubscribed ? 'bg-white/10 text-white border-white/40 hover:bg-white/20' : 'bg-white/5 text-white/20 border-white/10 cursor-not-allowed'
                         }`}
                        >

@@ -2,7 +2,7 @@
 import { saveSubscription, removeSubscription } from './alertService.ts';
 
 // Replace with your actual VAPID Public Key from your push service provider
-const VAPID_PUBLIC_KEY = 'BAoyqSy6cUSv2Z8hwNbiu3g7JkdqF9fvOiZg_hv-5-hfxVjolg1pKSKY-RLuT9uIHNW6CX82hJsuhRRdT27pSr0';
+const VAPID_PUBLIC_KEY = 'BIWQGXCmVRphj00cH4uoTto6aftOEbDiE3Q50aV2kTG22yA98mptczFsY8ztWsa3s0kR9Acx8YjgUpwALTjcLHo';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

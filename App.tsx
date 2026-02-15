@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2 } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert } from './types.ts';
@@ -224,6 +224,7 @@ const App: React.FC = () => {
   // Push notification state
   const [pushStatus, setPushStatus] = useState<NotificationPermission>('default');
   const [isPushSubscribed, setIsPushSubscribed] = useState(false);
+  const [isPushLoading, setIsPushLoading] = useState(false);
 
   // Favorites screen filter states
   const [favSearchTerm, setFavSearchTerm] = useState('');
@@ -278,20 +279,41 @@ const App: React.FC = () => {
     }
   }, [stockData, handleFetchData]);
 
+  // Robust Subscription Logic
+  const handleEnsureSubscription = async () => {
+    if (!isPushSupported()) return false;
+    
+    setIsPushLoading(true);
+    try {
+      const permission = getNotificationPermission();
+      
+      if (permission === 'default') {
+        const result = await requestNotificationPermission();
+        setPushStatus(result);
+        if (result !== 'granted') return false;
+      } else if (permission === 'denied') {
+        return false;
+      }
+      
+      const success = await subscribeUser();
+      setIsPushSubscribed(success);
+      return success;
+    } catch (e) {
+      console.error("Subscription flow error:", e);
+      return false;
+    } finally {
+      setIsPushLoading(false);
+    }
+  };
+
   // Alert Actions
   const handleSaveAlert = async (price: number, condition: 'above' | 'below'): Promise<boolean> => {
     if (!stockData) return false;
     
     setError(null);
     try {
-      if (isPushSupported() && getNotificationPermission() === 'default') {
-        const perm = await requestNotificationPermission();
-        setPushStatus(perm);
-        if (perm === 'granted') {
-          const subbed = await subscribeUser();
-          setIsPushSubscribed(subbed);
-        }
-      }
+      // Proactively ensure subscription is active
+      await handleEnsureSubscription();
 
       const success = await createAlert({
         ticker: stockData.info.ticker,
@@ -301,7 +323,7 @@ const App: React.FC = () => {
 
       if (success) {
         const freshAlerts = await fetchUserAlerts();
-        setUserAlerts(Array.isArray(freshAlerts) ? freshAlerts : []);
+        setUserAlerts(freshAlerts);
         setIsAlertModalOpen(false);
         return true;
       } else {
@@ -318,7 +340,7 @@ const App: React.FC = () => {
   const handleDeleteAlert = async (id: number) => {
     const success = await deleteAlert(id);
     if (success) {
-      setUserAlerts(prev => Array.isArray(prev) ? prev.filter(a => a.id !== id) : []);
+      setUserAlerts(prev => prev.filter(a => a.id !== id));
     }
   };
 
@@ -339,11 +361,18 @@ const App: React.FC = () => {
     const storedFavs = localStorage.getItem('stkr_favs_v2');
     if (storedFavs) setFavorites(JSON.parse(storedFavs));
     getAnonymousId();
-    fetchUserAlerts().then(alerts => setUserAlerts(Array.isArray(alerts) ? alerts : []));
+    fetchUserAlerts().then(alerts => setUserAlerts(alerts));
     
     if (isPushSupported()) {
-      setPushStatus(getNotificationPermission());
-      getPushSubscription().then(sub => setIsPushSubscribed(!!sub));
+      const perm = getNotificationPermission();
+      setPushStatus(perm);
+      getPushSubscription().then(sub => {
+        setIsPushSubscribed(!!sub);
+        // If granted but no subscription record in browser, try to fix it automatically
+        if (perm === 'granted' && !sub) {
+          subscribeUser().then(success => setIsPushSubscribed(success));
+        }
+      });
     }
 
     handleSelectAndSearch('AAPL');
@@ -571,6 +600,63 @@ const App: React.FC = () => {
                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                        <span className="text-[7px] font-black text-white uppercase tracking-widest">System Online</span>
                     </div>
+                  </div>
+               </div>
+
+               {/* Push Notification Diagnostics Card */}
+               <div className="glossy-card !border-white/30 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <div className={`p-2.5 rounded-xl border-2 transition-all ${
+                      pushStatus === 'granted' ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' :
+                      pushStatus === 'denied' ? 'bg-rose-500/10 border-rose-500/40 text-rose-400' :
+                      'bg-yellow-500/10 border-yellow-500/40 text-yellow-500'
+                    }`}>
+                      {pushStatus === 'granted' ? <ShieldCheck size={18} /> : 
+                       pushStatus === 'denied' ? <BellOff size={18} /> : 
+                       <AlertTriangle size={18} />}
+                    </div>
+                    <div className="flex flex-col">
+                      <h4 className="text-[11px] font-black text-white uppercase tracking-widest leading-none mb-1">Push System Status</h4>
+                      <p className={`text-[9px] font-bold uppercase tracking-widest ${
+                        pushStatus === 'granted' ? 'text-emerald-400/80' :
+                        pushStatus === 'denied' ? 'text-rose-400/80' :
+                        'text-yellow-400/80'
+                      }`}>
+                        {pushStatus === 'granted' ? (isPushSubscribed ? 'Alerts Optimized' : 'Permission Granted (Unsynced)') :
+                         pushStatus === 'denied' ? 'Alerts Blocked by OS' :
+                         'Action Required'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {pushStatus === 'default' && (
+                      <button 
+                        onClick={handleEnsureSubscription}
+                        disabled={isPushLoading}
+                        className="flex-1 sm:flex-none px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/10"
+                      >
+                        {isPushLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} fill="currentColor" />}
+                        Enable Notifications
+                      </button>
+                    )}
+                    {pushStatus === 'granted' && (
+                      <button 
+                        onClick={handleEnsureSubscription}
+                        disabled={isPushLoading}
+                        className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/30 transition-all flex items-center justify-center gap-2 shadow-xl ${
+                          isPushSubscribed ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-500/10'
+                        }`}
+                      >
+                        {isPushLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        {isPushSubscribed ? 'Sync Settings' : 'Repair Subscription'}
+                      </button>
+                    )}
+                    {pushStatus === 'denied' && (
+                      <div className="flex-1 sm:flex-none px-4 py-2 bg-rose-500/10 border border-rose-500/40 rounded-xl">
+                        <span className="text-[8px] font-black text-rose-400 uppercase tracking-widest">Reset Browser Permissions</span>
+                      </div>
+                    )}
                   </div>
                </div>
 

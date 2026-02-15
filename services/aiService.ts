@@ -109,22 +109,32 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
 
   try {
     const ai = getAI();
+    // Providing 30 days of context but emphasizing the 10-day analysis in the prompt
     const dataContext = stocks.map(s => {
-      const history = s.history.slice(-30).map(p => `C:${p.close}`).join(',');
-      return `SYMBOL:${s.info.ticker} PRICE:${s.info.currentPrice} HISTORY(30d):[${history}]`;
+      const history = s.history.slice(-30).map(p => 
+        `{T:${new Date(p.time * 1000).toISOString().split('T')[0]},C:${p.close},V:${p.volume}}`
+      ).join('|');
+      return `SYMBOL:${s.info.ticker} PRICE:${s.info.currentPrice} HISTORY:[${history}]`;
     }).join('\n');
 
     const prompt = `
-      Perform a rapid multi-stock pulse check. 
-      For each stock, provide a signal (BUY/SELL/HOLD), entry price, target 1, and stop-loss based on current price and recent 30-day history.
-      
+      Perform a High-Precision Multi-Stock Pulse Scan. 
+      Focus exclusively on identifying high-conviction "BUY" opportunities based on the most recent 10-day interval of price action and volume patterns.
+
       STOCKS DATA:
       ${dataContext}
 
+      ANALYSIS CRITERIA (10-Day Focus):
+      1. Identify Bullish Divergences or Breakouts occurring within the last 10 days.
+      2. Check for volume-supported support bounces.
+      3. ONLY include a stock in the response if it is a strong "BUY". If a stock is not a clear buy, exclude it from the final JSON array.
+      
       RULES:
-      - Be aggressive but realistic with levels.
-      - Stop loss should be sensible (usually 3-7% from entry).
-      - Target 1 should be a realistic resistance level.
+      - The 'signal' MUST always be "BUY". If you cannot justify a BUY, do not return that symbol.
+      - Calculate 'entry' as the current price or a slight pullback level.
+      - 'target1' must be a logical resistance level derived from the chart data.
+      - 'stopLoss' should be strictly placed 3-5% below entry to protect capital.
+      - Accuracy is paramount. Quality of signal over quantity.
       - Return ONLY a JSON array of objects.
     `;
 
@@ -140,7 +150,7 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
             properties: {
               symbol: { type: Type.STRING },
               currentPrice: { type: Type.NUMBER },
-              signal: { type: Type.STRING, description: "BUY, SELL, or HOLD" },
+              signal: { type: Type.STRING, description: "Must be BUY" },
               entry: { type: Type.NUMBER },
               target1: { type: Type.NUMBER },
               stopLoss: { type: Type.NUMBER }
@@ -153,7 +163,9 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
 
     const text = response.text;
     if (!text) return [];
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    // Extra safety filter to ensure only BUY signals are returned
+    return parsed.filter((item: WatchlistStockAnalysis) => item.signal === 'BUY');
   } catch (error) {
     console.error("Watchlist Pulse Error:", error);
     return [];

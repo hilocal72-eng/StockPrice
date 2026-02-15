@@ -95,22 +95,6 @@ export const deleteAlert = async (id: number): Promise<boolean> => {
   }
 };
 
-export const sendTestNotification = async (): Promise<boolean> => {
-  const anonId = getAnonymousId();
-  try {
-    const response = await fetch(`${ALERT_WORKER_URL}/test-push?userId=${encodeURIComponent(anonId)}`, {
-      method: 'POST',
-      headers: {
-        'X-User-ID': anonId,
-      },
-    });
-    return response.ok;
-  } catch (error) {
-    console.error('Failed to send test push:', error);
-    return false;
-  }
-};
-
 export const saveSubscription = async (subscription: PushSubscription): Promise<boolean> => {
   const anonId = getAnonymousId();
   try {

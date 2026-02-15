@@ -323,8 +323,6 @@ const App: React.FC = () => {
       // Proactively ensure subscription is active BEFORE saving alert
       const subSuccess = await handleEnsureSubscription();
       if (!subSuccess) {
-        // We warn the user, but we can still try to save the alert if they want
-        // though it won't trigger a push notification.
         console.warn("Saving alert without an active push subscription.");
       }
 
@@ -383,7 +381,6 @@ const App: React.FC = () => {
         setIsPushSubscribed(!!sub);
         // If granted but no subscription record in browser, try to fix it automatically
         if (perm === 'granted' && !sub) {
-          console.log("Permission granted but no local subscription. Attempting auto-fix...");
           subscribeUser().then(success => setIsPushSubscribed(success));
         }
       });
@@ -391,6 +388,17 @@ const App: React.FC = () => {
 
     handleSelectAndSearch('AAPL');
   }, [handleSelectAndSearch]);
+
+  // Prompt for permissions if the user visits the alerts tab and status is 'default'
+  useEffect(() => {
+    if (activeView === 'alerts' && pushStatus === 'default' && !isPushLoading) {
+      // Small delay to let the UI settle
+      const timer = setTimeout(() => {
+        handleEnsureSubscription();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeView]);
 
   const toggleFavorite = (ticker: string) => {
     const newFavs = favorites.includes(ticker) ? favorites.filter(f => f !== ticker) : [...favorites, ticker];

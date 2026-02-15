@@ -62,6 +62,9 @@ export const fetchUserAlerts = async (): Promise<Alert[]> => {
   try {
     const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(anonId)}`, {
       method: 'GET',
+      headers: {
+        'X-User-ID': anonId
+      }
     });
     
     if (!response.ok) {
@@ -96,7 +99,6 @@ export const saveSubscription = async (subscription: PushSubscription): Promise<
   const anonId = getAnonymousId();
   try {
     // CRITICAL: PushSubscription objects must be converted to JSON explicitly
-    // otherwise JSON.stringify(subscription) returns "{}"
     const subscriptionData = subscription.toJSON();
     
     const response = await fetch(`${ALERT_WORKER_URL}/subscribe`, {

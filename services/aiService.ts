@@ -2,7 +2,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { PricePoint, AIAnalysisResult, StockDetails, WatchlistStockAnalysis } from "../types.ts";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAI = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("Gemini API Key is missing. Please check your environment variables.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export const getAIIntelligenceReport = async (
   ticker: string,
@@ -10,6 +16,7 @@ export const getAIIntelligenceReport = async (
   history: PricePoint[]
 ): Promise<AIAnalysisResult | null> => {
   try {
+    const ai = getAI();
     const historySnippet = history.slice(-50).map(p => 
       `T:${new Date(p.time * 1000).toISOString()} O:${p.open} H:${p.high} L:${p.low} C:${p.close} V:${p.volume}`
     ).join('\n');
@@ -101,6 +108,7 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
   if (!stocks || stocks.length === 0) return [];
 
   try {
+    const ai = getAI();
     const dataContext = stocks.map(s => {
       const history = s.history.slice(-30).map(p => `C:${p.close}`).join(',');
       return `SYMBOL:${s.info.ticker} PRICE:${s.info.currentPrice} HISTORY(30d):[${history}]`;

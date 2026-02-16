@@ -1,78 +1,69 @@
+
 /*
  * Service Worker for Stocker
- * Robust handling to prevent "This site has been updated..." generic message
+ * Optimized for Encrypted Payloads to prevent system fallback messages.
  */
 
-const ALERT_WORKER_URL = 'https://stocker-api.hilocal72.workers.dev';
-
-// Helper to get anon ID from IndexedDB
-async function getAnonId() {
-  try {
-    return new Promise((resolve) => {
-      const request = indexedDB.open('StockerDB', 1);
-      request.onsuccess = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains('settings')) return resolve(null);
-        const tx = db.transaction('settings', 'readonly');
-        const store = tx.objectStore('settings');
-        const getReq = store.get('stkr_anon_id');
-        getReq.onsuccess = () => resolve(getReq.result);
-        getReq.onerror = () => resolve(null);
-      };
-      request.onerror = () => resolve(null);
-    });
-  } catch (e) { return null; }
-}
-
-async function fetchLatestAlert(anonId) {
-  // Very short timeout - if the API is slow, we must move on
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 1500); 
-
-  try {
-    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(anonId)}`, {
-      cache: 'no-store',
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    if (!response.ok) return null;
-    const alerts = await response.json();
-    // Return the most recent 'triggered' alert
-    return alerts.find(a => a.status === 'triggered') || null;
-  } catch (err) {
-    return null;
-  }
-}
-
 self.addEventListener('push', (event) => {
-  // Use event.waitUntil to keep the SW alive
-  event.waitUntil((async () => {
-    let title = 'Stock Alert Triggered';
-    let body = 'One of your price targets has been reached. Tap to view.';
-    let ticker = 'MARKET';
+  // A unique tag ensures that if multiple pushes arrive, they replace each other
+  // or handle themselves professionally without browser intervention.
+  const NOTIFICATION_TAG = 'stocker-price-alert';
 
+  // Default "Safe" data if the payload is missing or empty
+  let notificationData = {
+    title: 'Stocker: New Price Alert',
+    body: 'A price target has been reached. Tap to view details.',
+    ticker: 'MARKET'
+  };
+
+  // Check if the push contains data (The "Payload")
+  if (event.data) {
     try {
-      const anonId = await getAnonId();
-      if (anonId) {
-        const latestAlert = await fetchLatestAlert(anonId);
-        if (latestAlert) {
-          ticker = latestAlert.ticker;
-          title = `${ticker} Target Reached!`;
-          const condition = latestAlert.condition === 'above' ? 'rose above' : 'fell below';
-          body = `${ticker} has ${condition} ${latestAlert.target_price.toFixed(2)}.`;
+      // If your worker sends JSON, we parse it here
+      const json = event.data.json();
+      notificationData.title = json.title || `${json.ticker} Alert!`;
+      notificationData.body = json.body || `Target price reached for ${json.ticker}.`;
+      notificationData.ticker = json.ticker || 'MARKET';
+    } catch (e) {
+      // If your worker sends plain text, we use that as the body
+      const text = event.data.text();
+      if (text) notificationData.body = text;
+    }
+  }
+
+  // CRITICAL: We show the notification IMMEDIATELY.
+  // Because we are not doing a 'fetch()' here, the browser sees the notification
+  // within milliseconds of the push arriving, satisfying its "Show-something-now" rule.
+  const promiseChain = self.registration.showNotification(notificationData.title, {
+    body: notificationData.body,
+    icon: '/icon-192x192.png',
+    badge: '/icon-192x192.png',
+    tag: NOTIFICATION_TAG,
+    renotify: true,
+    requireInteraction: true,
+    data: { ticker: notificationData.ticker },
+    actions: [
+      { action: 'open', title: 'View Chart' }
+    ]
+  });
+
+  event.waitUntil(promiseChain);
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  
+  // Logic to focus the app window or open it
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
         }
       }
-    } catch (err) {
-      console.error("SW Error:", err);
-    }
-
-    // ALWAYS call showNotification at the end of the async chain
-    return self.registration.showNotification(title, {
-      body: body,
-      icon: '/icon-192x192.png',
-      badge: '/icon-192x192.png',
-      tag: 'stock-alert', // Use a constant tag to overwrite the generic browser message
-      data: { ticker }
-    });
-  })());
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/');
+      }
+    })
+  );
 });

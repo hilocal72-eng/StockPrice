@@ -1,68 +1,71 @@
 
 /*
  * Service Worker for Stocker
- * Handles Background Push Notifications
+ * Handles Background Push Notifications (Tickle Method)
  */
 
 self.addEventListener('push', (event) => {
   console.log('[Service Worker] Push Received.');
   
-  let data = { title: 'Stocker Alert', body: 'Price target breach detected.' };
+  let data = { 
+    title: 'Stocker Market Alert', 
+    body: 'One of your price targets has been reached. Tap to view details.' 
+  };
   
+  // Try to parse data if it exists (for future encrypted payloads)
   if (event.data) {
     try {
-      data = event.data.json();
-      console.log('[Service Worker] Push Data (JSON):', data);
+      const json = event.data.json();
+      data.title = json.title || data.title;
+      data.body = json.body || data.body;
+      data.ticker = json.ticker;
+      console.log('[Service Worker] Payload detected:', json);
     } catch (e) {
-      data.body = event.data.text();
-      console.log('[Service Worker] Push Data (Text):', data.body);
+      const text = event.data.text();
+      if (text) data.body = text;
+      console.log('[Service Worker] Text payload detected:', text);
     }
   } else {
-    console.log('[Service Worker] Push event received but no data payload found.');
+    console.log('[Service Worker] Tickle received (no payload). Showing generic alert.');
   }
 
   const options = {
-    body: data.body || 'Price target breach detected.',
+    body: data.body,
     icon: '/icon-192x192.png',
     badge: '/icon-512x512.png',
-    vibrate: [100, 50, 100],
+    vibrate: [200, 100, 200],
+    tag: data.ticker ? `stock-alert-${data.ticker}` : 'stock-alert-generic',
+    renotify: true,
     data: {
       dateOfArrival: Date.now(),
       primaryKey: '1'
     },
     actions: [
-      { action: 'open', title: 'View Chart' },
+      { action: 'open', title: 'Open Dashboard' },
       { action: 'close', title: 'Dismiss' },
-    ],
-    // Tag prevents multiple notifications for the same stock from stacking up
-    tag: 'stock-alert-' + (data.ticker || 'generic'),
-    renotify: true
+    ]
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Stocker Alert', options)
-      .then(() => console.log('[Service Worker] Notification displayed successfully.'))
-      .catch(err => console.error('[Service Worker] Error displaying notification:', err))
+    self.registration.showNotification(data.title, options)
+      .catch(err => console.error('[Service Worker] Notification Error:', err))
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification clicked. Action:', event.action);
   event.notification.close();
 
-  if (event.action === 'close') {
-    return;
-  }
+  if (event.action === 'close') return;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // If a window is already open, focus it
+      // Focus existing window if open
       for (const client of clientList) {
-        if (client.url === '/' && 'focus' in client) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
           return client.focus();
         }
       }
-      // Otherwise open a new window
+      // Or open a new one
       if (clients.openWindow) {
         return clients.openWindow('/');
       }

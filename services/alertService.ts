@@ -15,6 +15,25 @@ const generateFallbackUUID = () => {
   });
 };
 
+/**
+ * Stores the ID in IndexedDB for Service Worker access
+ */
+const syncIdToIDB = (id: string) => {
+  const request = indexedDB.open('StockerDB', 1);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    if (!db.objectStoreNames.contains('settings')) {
+      db.createObjectStore('settings');
+    }
+  };
+  request.onsuccess = () => {
+    const db = request.result;
+    const tx = db.transaction('settings', 'readwrite');
+    const store = tx.objectStore('settings');
+    store.put(id, 'stkr_anon_id');
+  };
+};
+
 export const getAnonymousId = (): string => {
   let id = localStorage.getItem('stkr_anon_id');
   if (!id) {
@@ -27,6 +46,10 @@ export const getAnonymousId = (): string => {
     }
     localStorage.setItem('stkr_anon_id', id);
   }
+  
+  // Always sync to IDB to ensure SW has it
+  syncIdToIDB(id);
+  
   return id;
 };
 

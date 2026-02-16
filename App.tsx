@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert } from './types.ts';
@@ -32,7 +32,7 @@ const AnimatedMarketBackground: React.FC = () => {
       />
       <div className="absolute inset-0 bg-gradient-to-tr from-black via-transparent to-pink-900/10 opacity-60" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(0,0,0,0)_0%,rgba(1,2,3,1)_90%)]" />
-      <div className="absolute inset-0 bg-grid animate-grid opacity-10" />
+      <div className="absolute inset-0 bg-grid animate-grid opacity(10)" />
       <div className="absolute inset-0 scanlines opacity-[0.03]" />
     </div>
   );
@@ -279,14 +279,47 @@ const App: React.FC = () => {
     }
   }, [stockData, handleFetchData]);
 
+  // Check if browser is iOS and NOT in standalone mode
+  const isIosAndNotStandalone = useMemo(() => {
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    const isStandalone = (window.navigator as any).standalone === true;
+    return isIos && !isStandalone;
+  }, []);
+
+  // Refresh Alerts Logic
+  const refreshAlerts = useCallback(async () => {
+    try {
+      const alerts = await fetchUserAlerts();
+      setUserAlerts(alerts);
+    } catch (e) {
+      console.warn("Failed to poll alerts:", e);
+    }
+  }, []);
+
+  // Polling logic for alerts
+  useEffect(() => {
+    // Only poll if we are on the alerts view or have active alerts
+    const hasActive = userAlerts.some(a => a.status === 'active');
+    if (!hasActive && activeView !== 'alerts') return;
+
+    const interval = setInterval(refreshAlerts, 30000); // Poll every 30s
+    return () => clearInterval(interval);
+  }, [activeView, userAlerts, refreshAlerts]);
+
   // Robust Subscription Logic
   const handleEnsureSubscription = async () => {
     if (!isPushSupported()) {
       setError("Push Manager is not supported on this device/browser.");
       return false;
     }
+
+    if (isIosAndNotStandalone) {
+      setError("iOS Alert Setup: Please 'Add to Home Screen' using the Share button to enable push notifications.");
+      return false;
+    }
     
     setIsPushLoading(true);
+    setError(null);
     try {
       const permission = getNotificationPermission();
       
@@ -295,19 +328,19 @@ const App: React.FC = () => {
         setPushStatus(result);
         if (result !== 'granted') return false;
       } else if (permission === 'denied') {
-        setError("Notifications blocked. Please reset site permissions in browser settings.");
+        setError("Notifications blocked. Please reset site permissions in your browser settings.");
         return false;
       }
       
       const success = await subscribeUser();
       setIsPushSubscribed(success);
       if (!success) {
-        setError("Failed to register for push alerts. Check your connection.");
+        setError("Registry Sync Failed: Check Worker Database status (D1 Tables) and VAPID Keys.");
       }
       return success;
     } catch (e) {
       console.error("Subscription flow error:", e);
-      setError("An error occurred while enabling notifications.");
+      setError("Handshake Error: Failed to secure push token from browser service.");
       return false;
     } finally {
       setIsPushLoading(false);
@@ -322,7 +355,8 @@ const App: React.FC = () => {
     try {
       // Proactively ensure subscription is active BEFORE saving alert
       const subSuccess = await handleEnsureSubscription();
-      if (!subSuccess) {
+      if (!subSuccess && !isPushSubscribed) {
+        // We still allow saving the alert but warn the user
         console.warn("Saving alert without an active push subscription.");
       }
 
@@ -333,12 +367,11 @@ const App: React.FC = () => {
       });
 
       if (success) {
-        const freshAlerts = await fetchUserAlerts();
-        setUserAlerts(freshAlerts);
+        await refreshAlerts();
         setIsAlertModalOpen(false);
         return true;
       } else {
-        setError("Unable to save alert. Check connection or Worker status.");
+        setError("Unable to save alert. Ensure D1 Tables exist and Worker is deployed.");
         return false;
       }
     } catch (err) {
@@ -372,7 +405,7 @@ const App: React.FC = () => {
     const storedFavs = localStorage.getItem('stkr_favs_v2');
     if (storedFavs) setFavorites(JSON.parse(storedFavs));
     getAnonymousId();
-    fetchUserAlerts().then(alerts => setUserAlerts(alerts));
+    refreshAlerts();
     
     if (isPushSupported()) {
       const perm = getNotificationPermission();
@@ -380,25 +413,25 @@ const App: React.FC = () => {
       getPushSubscription().then(sub => {
         setIsPushSubscribed(!!sub);
         // If granted but no subscription record in browser, try to fix it automatically
-        if (perm === 'granted' && !sub) {
+        if (perm === 'granted' && !sub && !isIosAndNotStandalone) {
           subscribeUser().then(success => setIsPushSubscribed(success));
         }
       });
     }
 
     handleSelectAndSearch('AAPL');
-  }, [handleSelectAndSearch]);
+  }, [handleSelectAndSearch, isIosAndNotStandalone, refreshAlerts]);
 
   // Prompt for permissions if the user visits the alerts tab and status is 'default'
   useEffect(() => {
-    if (activeView === 'alerts' && pushStatus === 'default' && !isPushLoading) {
+    if (activeView === 'alerts' && pushStatus === 'default' && !isPushLoading && !isIosAndNotStandalone) {
       // Small delay to let the UI settle
       const timer = setTimeout(() => {
         handleEnsureSubscription();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [activeView]);
+  }, [activeView, isIosAndNotStandalone]);
 
   const toggleFavorite = (ticker: string) => {
     const newFavs = favorites.includes(ticker) ? favorites.filter(f => f !== ticker) : [...favorites, ticker];
@@ -426,7 +459,7 @@ const App: React.FC = () => {
   }, [userAlerts, stockData]);
 
   return (
-    <div className="h-screen w-screen flex flex-col md:flex-row bg-[#010203] relative overflow-hidden">
+    <div className="h-screen w-screen flex flex-col md:flex-row bg-[#010203] relative overflow-hidden text-[10px]">
       <AnimatedMarketBackground />
       
       <AnimatePresence>
@@ -507,7 +540,7 @@ const App: React.FC = () => {
               <div className="w-full max-sm relative group" onFocus={() => setIsSearchFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsSearchFocused(false); }}>
                 <form className="relative" onSubmit={(e) => { e.preventDefault(); handleSelectAndSearch(searchResults.length > 0 ? searchResults[0].symbol : searchTerm); }}>
                   <input type="text" placeholder="Search by name or symbol..." className="w-full bg-white/[0.08] border border-white/40 rounded-xl py-3 pl-5 pr-12 text-[12px] font-bold text-white placeholder-white/30 focus:outline-none focus:border-pink-500/80 transition-all shadow-inner" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                  <button type="submit" className="absolute inset-y-0 right-0 flex items-center pr-4 text-yellow/80 hover:text-pink-500 transition-colors duration-200"><motion.div animate={{ y: [0, -2, 0], scale: [1, 1.1, 1] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}><TrendingUp size={16} strokeWidth={3} /></motion.div></button>
+                  <button type="submit" className="absolute inset-y-0 right-0 flex items-center pr-4 text-white/80 hover:text-pink-500 transition-colors duration-200"><motion.div animate={{ y: [0, -2, 0], scale: [1, 1.1, 1] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}><TrendingUp size={16} strokeWidth={3} /></motion.div></button>
                 </form>
                 <AnimatePresence>{isSearchFocused && searchResults.length > 0 && (<motion.ul initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-full mt-2 w-full glossy-card !border-white/40 rounded-xl overflow-hidden z-50 p-1">{searchResults.map((result) => (<li key={result.symbol} onMouseDown={() => handleSelectAndSearch(result.symbol)} className="p-3 hover:bg-white/10 rounded-lg cursor-pointer transition-colors"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white uppercase">{result.symbol}</span><span className="text-[9px] font-bold text-white/40 px-2 py-0.5 bg-white/5 rounded">{result.exchange}</span></div><p className="text-[10px] text-white/60 mt-1 truncate">{result.name}</p></li>))}</motion.ul>)}</AnimatePresence>
               </div>
@@ -627,6 +660,28 @@ const App: React.FC = () => {
                   </div>
                </div>
 
+               {/* iOS Install Prompt Alert */}
+               {isIosAndNotStandalone && (
+                 <motion.div 
+                   initial={{ opacity: 0, y: -10 }} 
+                   animate={{ opacity: 1, y: 0 }}
+                   className="p-4 bg-pink-600/20 border border-pink-500/50 rounded-2xl flex flex-col gap-3 shadow-xl shadow-pink-500/5"
+                 >
+                   <div className="flex items-center gap-3">
+                     <div className="p-2 bg-pink-500 rounded-xl text-white">
+                        <Smartphone size={18} />
+                     </div>
+                     <div className="flex flex-col">
+                        <h4 className="text-[11px] font-black text-white uppercase tracking-widest">iOS Installation Required</h4>
+                        <span className="text-[8px] font-bold text-pink-400 uppercase tracking-widest">Browser restrictions apply</span>
+                     </div>
+                   </div>
+                   <p className="text-[10px] text-white/80 leading-relaxed font-medium">
+                     To enable Price Alerts on iPhone, tap the <span className="text-white font-bold underline">Share</span> button in Safari and select <span className="text-white font-bold underline">"Add to Home Screen"</span>.
+                   </p>
+                 </motion.div>
+               )}
+
                {/* Push Notification Diagnostics Card */}
                <div className="glossy-card !border-white/30 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -654,26 +709,24 @@ const App: React.FC = () => {
                   </div>
                   
                   <div className="flex items-center gap-2 w-full sm:w-auto">
-                    {pushStatus === 'default' && (
+                    {(pushStatus === 'default' || (pushStatus === 'granted' && !isPushSubscribed)) && (
                       <button 
                         onClick={handleEnsureSubscription}
                         disabled={isPushLoading}
                         className="flex-1 sm:flex-none px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/10"
                       >
                         {isPushLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} fill="currentColor" />}
-                        Enable Notifications
+                        {isPushSubscribed ? 'Fix Subscription' : 'Enable Notifications'}
                       </button>
                     )}
-                    {pushStatus === 'granted' && (
+                    {pushStatus === 'granted' && isPushSubscribed && (
                       <button 
                         onClick={handleEnsureSubscription}
                         disabled={isPushLoading}
-                        className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/30 transition-all flex items-center justify-center gap-2 shadow-xl ${
-                          isPushSubscribed ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-500/10'
-                        }`}
+                        className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/30 transition-all flex items-center justify-center gap-2 shadow-xl bg-white/10 text-white hover:bg-white/20"
                       >
                         {isPushLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                        {isPushSubscribed ? 'Sync Settings' : 'Repair Subscription'}
+                        Sync Settings
                       </button>
                     )}
                     {pushStatus === 'denied' && (

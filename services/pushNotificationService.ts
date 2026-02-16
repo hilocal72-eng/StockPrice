@@ -26,28 +26,69 @@ export const getNotificationPermission = (): NotificationPermission => {
 
 export const requestNotificationPermission = async (): Promise<NotificationPermission> => {
   if (!('Notification' in window)) return 'denied';
-  return await Notification.requestPermission();
+  try {
+    return await Notification.requestPermission();
+  } catch (e) {
+    // Some older browsers might use callback instead of promise
+    return new Promise((resolve) => {
+      Notification.requestPermission((result) => resolve(result));
+    });
+  }
 };
 
 export const getPushSubscription = async (): Promise<PushSubscription | null> => {
   if (!isPushSupported()) return null;
-  const registration = await navigator.serviceWorker.ready;
-  return await registration.pushManager.getSubscription();
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    return await registration.pushManager.getSubscription();
+  } catch (e) {
+    console.error('Error checking existing push subscription:', e);
+    return null;
+  }
 };
 
 export const subscribeUser = async (): Promise<boolean> => {
-  if (!isPushSupported()) return false;
+  if (!isPushSupported()) {
+    console.warn('Push is not supported on this browser/environment.');
+    return false;
+  }
 
   try {
+    // Ensure we have the service worker ready
     const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.subscribe({
+    
+    // Check if subscription already exists
+    let subscription = await registration.pushManager.getSubscription();
+    
+    if (subscription) {
+      console.log('User already has a subscription, syncing with server...');
+      return await saveSubscription(subscription);
+    }
+
+    // New subscription
+    subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
 
+    if (!subscription) {
+      console.error('PushManager.subscribe returned null/undefined');
+      return false;
+    }
+
     return await saveSubscription(subscription);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to subscribe to push notifications:', error);
+    
+    // Check for specific common errors
+    if (error.name === 'NotAllowedError') {
+      console.warn('Permission denied by user.');
+    } else if (error.name === 'AbortError') {
+      console.warn('Subscription aborted.');
+    } else if (error.name === 'InvalidStateError') {
+      console.warn('Service worker not ready or active.');
+    }
+    
     return false;
   }
 };
@@ -58,8 +99,12 @@ export const unsubscribeUser = async (): Promise<boolean> => {
   try {
     const subscription = await getPushSubscription();
     if (subscription) {
-      await subscription.unsubscribe();
-      await removeSubscription(subscription.endpoint);
+      const endpoint = subscription.endpoint;
+      const success = await subscription.unsubscribe();
+      if (success) {
+        await removeSubscription(endpoint);
+      }
+      return success;
     }
     return true;
   } catch (error) {

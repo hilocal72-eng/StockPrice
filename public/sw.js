@@ -1,68 +1,74 @@
 
 /*
- * Service Worker for Stocker
- * Optimized for Encrypted Payloads to prevent system fallback messages.
+ * Stocker Service Worker
+ * Robust Push Notification Handler
  */
 
-self.addEventListener('push', (event) => {
-  // A unique tag ensures that if multiple pushes arrive, they replace each other
-  // or handle themselves professionally without browser intervention.
-  const NOTIFICATION_TAG = 'stocker-price-alert';
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
 
-  // Default "Safe" data if the payload is missing or empty
-  let notificationData = {
-    title: 'Stocker: New Price Alert',
-    body: 'A price target has been reached. Tap to view details.',
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim());
+});
+
+self.addEventListener('push', (event) => {
+  const NOTIFICATION_TAG = 'stocker-price-alert';
+  
+  let data = {
+    title: 'Stocker Alert',
+    body: 'A price target has been reached.',
     ticker: 'MARKET'
   };
 
-  // Check if the push contains data (The "Payload")
   if (event.data) {
     try {
-      // If your worker sends JSON, we parse it here
-      const json = event.data.json();
-      notificationData.title = json.title || `${json.ticker} Alert!`;
-      notificationData.body = json.body || `Target price reached for ${json.ticker}.`;
-      notificationData.ticker = json.ticker || 'MARKET';
+      const payload = event.data.json();
+      data = {
+        title: payload.title || `${payload.ticker} Alert!`,
+        body: payload.body || `Price target reached for ${payload.ticker}`,
+        ticker: payload.ticker || 'MARKET'
+      };
     } catch (e) {
-      // If your worker sends plain text, we use that as the body
-      const text = event.data.text();
-      if (text) notificationData.body = text;
+      data.body = event.data.text();
     }
   }
 
-  // CRITICAL: We show the notification IMMEDIATELY.
-  // Because we are not doing a 'fetch()' here, the browser sees the notification
-  // within milliseconds of the push arriving, satisfying its "Show-something-now" rule.
-  const promiseChain = self.registration.showNotification(notificationData.title, {
-    body: notificationData.body,
+  const options = {
+    body: data.body,
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
     tag: NOTIFICATION_TAG,
     renotify: true,
-    requireInteraction: true,
-    data: { ticker: notificationData.ticker },
+    vibrate: [200, 100, 200],
+    data: {
+      url: self.location.origin,
+      ticker: data.ticker
+    },
     actions: [
-      { action: 'open', title: 'View Chart' }
+      { action: 'open', title: 'View Dashboard' }
     ]
-  });
+  };
 
-  event.waitUntil(promiseChain);
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  
-  // Logic to focus the app window or open it
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // If a window is already open, focus it
       for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
+        if (client.url === event.notification.data.url && 'focus' in client) {
           return client.focus();
         }
       }
-      if (self.clients.openWindow) {
-        return self.clients.openWindow('/');
+      // Otherwise open a new window
+      if (clients.openWindow) {
+        return clients.openWindow('/');
       }
     })
   );

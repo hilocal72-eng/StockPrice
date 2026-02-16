@@ -286,25 +286,23 @@ const App: React.FC = () => {
     return isIos && !isStandalone;
   }, []);
 
-  // Refresh Alerts Logic
+  // Sync alerts status from DB
   const refreshAlerts = useCallback(async () => {
     try {
       const alerts = await fetchUserAlerts();
       setUserAlerts(alerts);
     } catch (e) {
-      console.warn("Failed to poll alerts:", e);
+      console.warn("Sync failed:", e);
     }
   }, []);
 
-  // Polling logic for alerts
+  // Auto-polling for status updates every 20 seconds
   useEffect(() => {
-    // Only poll if we are on the alerts view or have active alerts
     const hasActive = userAlerts.some(a => a.status === 'active');
     if (!hasActive && activeView !== 'alerts') return;
-
-    const interval = setInterval(refreshAlerts, 30000); // Poll every 30s
+    const interval = setInterval(refreshAlerts, 20000);
     return () => clearInterval(interval);
-  }, [activeView, userAlerts, refreshAlerts]);
+  }, [userAlerts, activeView, refreshAlerts]);
 
   // Robust Subscription Logic
   const handleEnsureSubscription = async () => {

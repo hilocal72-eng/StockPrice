@@ -1,7 +1,7 @@
 
 /*
  * Service Worker for Stocker
- * Handles Background Push Notifications with Real Data Retrieval
+ * Handles Background Push Notifications with Robust Fallbacks
  */
 
 const ALERT_WORKER_URL = 'https://stocker-api.hilocal72.workers.dev';
@@ -9,34 +9,43 @@ const ALERT_WORKER_URL = 'https://stocker-api.hilocal72.workers.dev';
 // Helper to get anon ID from IndexedDB
 async function getAnonId() {
   return new Promise((resolve) => {
-    const request = indexedDB.open('StockerDB', 1);
-    request.onsuccess = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('settings')) {
-        resolve(null);
-        return;
-      }
-      const tx = db.transaction('settings', 'readonly');
-      const store = tx.objectStore('settings');
-      const getReq = store.get('stkr_anon_id');
-      getReq.onsuccess = () => resolve(getReq.result);
-      getReq.onerror = () => resolve(null);
-    };
-    request.onerror = () => resolve(null);
+    try {
+      const request = indexedDB.open('StockerDB', 1);
+      request.onsuccess = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('settings')) {
+          resolve(null);
+          return;
+        }
+        const tx = db.transaction('settings', 'readonly');
+        const store = tx.objectStore('settings');
+        const getReq = store.get('stkr_anon_id');
+        getReq.onsuccess = () => resolve(getReq.result);
+        getReq.onerror = () => resolve(null);
+      };
+      request.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
   });
 }
 
-// Fetch the most recently triggered alert for the user
+// Fetch the most recently triggered alert for the user with a timeout
 async function fetchLatestAlert(anonId) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+
   try {
     const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(anonId)}`, {
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
+    
     if (!response.ok) return null;
     const alerts = await response.json();
     if (!Array.isArray(alerts)) return null;
     
-    // Find the newest alert that is currently marked as triggered
     const triggered = alerts
       .filter(a => a.status === 'triggered')
       .sort((a, b) => {
@@ -47,7 +56,7 @@ async function fetchLatestAlert(anonId) {
       
     return triggered.length > 0 ? triggered[0] : null;
   } catch (err) {
-    console.error('[SW] Fetch failed:', err);
+    console.error('[SW] Fetch failed or timed out:', err);
     return null;
   }
 }
@@ -63,15 +72,15 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   console.log('[Service Worker] Push Event Received.');
 
-  // Always use event.waitUntil to keep the SW alive until the notification is shown.
-  // This prevents the "site has been updated in the background" browser message.
-  event.waitUntil(
-    (async () => {
-      let title = 'Stocker Alert';
-      let body = 'One of your price targets has been reached.';
-      let ticker = 'GENERIC';
+  // The browser requires showNotification to be called. 
+  // We wrap everything in a promise that is guaranteed to resolve to showNotification.
+  const promiseChain = (async () => {
+    let title = 'Stocker Alert';
+    let body = 'One of your price targets has been reached.';
+    let ticker = 'MARKET';
 
-      // 1. Try to parse payload from push event data first
+    try {
+      // 1. Check if payload exists in the push itself (Best practice)
       if (event.data) {
         try {
           const json = event.data.json();
@@ -83,7 +92,7 @@ self.addEventListener('push', (event) => {
           if (text) body = text;
         }
       } 
-      // 2. If payload is empty (Tickle push), try to fetch the real alert data from backend
+      // 2. If no payload, try a quick background fetch
       else {
         const anonId = await getAnonId();
         if (anonId) {
@@ -96,28 +105,33 @@ self.addEventListener('push', (event) => {
           }
         }
       }
+    } catch (err) {
+      console.error('[SW] Error processing push:', err);
+      // Fall through to default title/body
+    }
 
-      const options = {
-        body: body,
-        icon: '/icon-192x192.png',
-        badge: '/icon-512x512.png',
-        vibrate: [200, 100, 200],
-        tag: `stock-alert-${ticker}`,
-        renotify: true,
-        requireInteraction: true,
-        data: {
-          dateOfArrival: Date.now(),
-          ticker: ticker
-        },
-        actions: [
-          { action: 'open', title: 'View Chart' },
-          { action: 'close', title: 'Dismiss' },
-        ]
-      };
+    const options = {
+      body: body,
+      icon: '/icon-192x192.png',
+      badge: '/icon-512x512.png',
+      vibrate: [200, 100, 200],
+      tag: `stock-alert-${ticker}`, // Tag avoids duplicate notifications
+      renotify: true,
+      requireInteraction: true,
+      data: {
+        dateOfArrival: Date.now(),
+        ticker: ticker
+      },
+      actions: [
+        { action: 'open', title: 'View Chart' },
+        { action: 'close', title: 'Dismiss' },
+      ]
+    };
 
-      return self.registration.showNotification(title, options);
-    })()
-  );
+    return self.registration.showNotification(title, options);
+  })();
+
+  event.waitUntil(promiseChain);
 });
 
 self.addEventListener('notificationclick', (event) => {

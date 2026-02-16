@@ -1,7 +1,6 @@
-
 import { Alert } from '../types.ts';
 
-// Cloudflare Worker URL
+// Cloudflare Worker URL - Updated to the current production endpoint
 const ALERT_WORKER_URL = 'https://stocker-api.hilocal72.workers.dev';
 
 const generateFallbackUUID = () => {
@@ -104,6 +103,7 @@ export const saveSubscription = async (subscription: PushSubscription): Promise<
     });
     return response.ok;
   } catch (error) {
+    console.error('Save subscription error:', error);
     return false;
   }
 };

@@ -1,18 +1,27 @@
-
 /*
  * Service Worker for Stocker
  * Handles Background Push Notifications (Tickle Method)
  */
 
+// Force the service worker to become active immediately
+self.addEventListener('install', (event) => {
+  console.log('[Service Worker] Installing...');
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('[Service Worker] Activating and claiming clients...');
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push Received.');
+  console.log('[Service Worker] Push Event Received.');
   
   let data = { 
-    title: 'Stocker Market Alert', 
-    body: 'One of your price targets has been reached. Tap to view details.' 
+    title: 'Stocker Alert', 
+    body: 'One of your price targets has been reached.' 
   };
   
-  // Try to parse data if it exists (for future encrypted payloads)
   if (event.data) {
     try {
       const json = event.data.json();
@@ -26,7 +35,7 @@ self.addEventListener('push', (event) => {
       console.log('[Service Worker] Text payload detected:', text);
     }
   } else {
-    console.log('[Service Worker] Tickle received (no payload). Showing generic alert.');
+    console.log('[Service Worker] Empty (Tickle) push received.');
   }
 
   const options = {
@@ -36,38 +45,41 @@ self.addEventListener('push', (event) => {
     vibrate: [200, 100, 200],
     tag: data.ticker ? `stock-alert-${data.ticker}` : 'stock-alert-generic',
     renotify: true,
+    requireInteraction: true,
     data: {
       dateOfArrival: Date.now(),
-      primaryKey: '1'
+      ticker: data.ticker
     },
     actions: [
-      { action: 'open', title: 'Open Dashboard' },
+      { action: 'open', title: 'View Chart' },
       { action: 'close', title: 'Dismiss' },
     ]
   };
 
   event.waitUntil(
     self.registration.showNotification(data.title, options)
-      .catch(err => console.error('[Service Worker] Notification Error:', err))
+      .then(() => console.log('[Service Worker] Notification shown successfully.'))
+      .catch(err => console.error('[Service Worker] Notification display failed:', err))
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
+  console.log('[Service Worker] Notification clicked:', event.action);
   event.notification.close();
 
   if (event.action === 'close') return;
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Focus existing window if open
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // If a window is already open, focus it
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           return client.focus();
         }
       }
-      // Or open a new one
-      if (clients.openWindow) {
-        return clients.openWindow('/');
+      // Otherwise open a new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/');
       }
     })
   );

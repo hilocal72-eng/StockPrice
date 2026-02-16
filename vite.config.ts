@@ -1,24 +1,19 @@
-
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
-  // Set the third parameter to '' to load all envs regardless of the `VITE_` prefix.
-  // Fix: Cast process to any to access cwd() which is available in Node.js environments
   const env = loadEnv(mode, (process as any).cwd(), '');
 
   return {
     define: {
-      // This stringifies the environment variable so it can be injected 
-      // as a literal string in the bundled code.
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.GEMINI_API_KEY || ''),
     },
     plugins: [
       react(),
       VitePWA({
+        injectRegister: null, // Critical: Disable automatic injection to use manual registration in index.tsx
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
         manifest: {

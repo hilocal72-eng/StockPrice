@@ -1,80 +1,58 @@
 
 /*
- * Stocker Service Worker - Final Compliance Version
+ * Stocker Service Worker - Direct Payload Version
  */
 
-const API_BASE_URL = 'https://stocker-api.hilocal72.workers.dev';
-const NOTIFICATION_TAG = 'stocker-price-hit';
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim());
-});
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(clients.claim()));
 
 /**
- * Fast ID Lookup
- */
-async function getFastUserId() {
-  try {
-    const cache = await caches.open('stocker-fast-id');
-    const response = await cache.match('/user-id');
-    if (response) return await response.text();
-  } catch (e) {}
-  return null;
-}
-
-/**
- * PUSH HANDLER
+ * PUSH HANDLER (Direct Payload)
  */
 self.addEventListener('push', (event) => {
-  // 1. SHOW THE NOTIFICATION IMMEDIATELY
-  // We do not 'await' anything before this call. 
-  // This satisfies the browser's watchdog instantly.
-  const promise = self.registration.showNotification('Stocker: Price Alert', {
-    body: 'A stock has reached your target price.',
+  let data = {
+    title: 'Stocker: Alert',
+    body: 'A price target was reached.',
+    url: '/alerts'
+  };
+
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      console.warn('Push data was not JSON, falling back to text.');
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
-    tag: NOTIFICATION_TAG,
+    tag: 'stocker-price-hit',
     vibrate: [100],
-    data: { url: '/alerts' }
-  }).then(async () => {
-    // 2. NOW (In the background) try to get real data to update the text.
-    try {
-      const userId = await getFastUserId();
-      if (!userId) return;
+    data: { url: data.url || '/alerts' },
+    // renotify: true ensures multiple hits for different stocks show up
+    renotify: true 
+  };
 
-      const response = await fetch(`${API_BASE_URL}/latest?userId=${encodeURIComponent(userId)}`);
-      if (!response.ok) return;
-
-      const alert = await response.json();
-      if (alert && alert.ticker) {
-        // 3. Update the existing notification with real data
-        return self.registration.showNotification(`${alert.ticker} Hit ${alert.target_price}!`, {
-          body: `Target reached: ${alert.condition} ${alert.target_price}.`,
-          icon: '/icon-192x192.png',
-          badge: '/icon-192x192.png',
-          tag: NOTIFICATION_TAG, 
-          renotify: false, 
-          data: { url: '/alerts' }
-        });
-      }
-    } catch (e) {
-      console.error('[SW] Data fetch failed, generic notification remains.');
-    }
-  });
-
-  event.waitUntil(promise);
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const urlToOpen = event.notification.data.url || '/';
+  
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      if (clientList.length > 0) return clientList[0].focus();
-      return clients.openWindow('/');
+      for (const client of clientList) {
+        if (client.url.includes(urlToOpen) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      return clients.openWindow(urlToOpen);
     })
   );
 });

@@ -1,7 +1,6 @@
 
 /*
- * Stocker Service Worker
- * "Immediate Shell" Pattern to prevent "Site updated in background"
+ * Stocker Service Worker - Bulletproof Version
  */
 
 const API_BASE_URL = 'https://stocker-api.hilocal72.workers.dev';
@@ -24,6 +23,10 @@ async function getUserIdFromIDB() {
     request.onerror = () => resolve(null);
     request.onsuccess = () => {
       const db = request.result;
+      if (!db.objectStoreNames.contains('settings')) {
+        resolve(null);
+        return;
+      }
       try {
         const tx = db.transaction('settings', 'readonly');
         const store = tx.objectStore('settings');
@@ -41,59 +44,54 @@ async function getUserIdFromIDB() {
  * Main Push Handler
  */
 self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push Received.');
+  console.log('[Service Worker] Push event received');
 
-  const processPush = async () => {
-    // 1. IMMEDIATELY show a generic notification (The "Shell")
-    // This satisfies the browser's requirement to show something instantly.
-    await self.registration.showNotification('Stocker Alert', {
-      body: 'Processing price target...',
-      icon: '/icon-192x192.png',
-      badge: '/icon-192x192.png',
-      tag: NOTIFICATION_TAG, // Using a tag allows us to replace this later
-      silent: true // Start quiet while we fetch details
-    });
+  // STRATEGY: 
+  // We must show a notification IMMEDIATELY. 
+  // We do NOT await anything before showing the first one.
+  const initialNotificationPromise = self.registration.showNotification('Stocker Alert', {
+    body: 'Checking latest price targets...',
+    icon: '/icon-192x192.png',
+    badge: '/icon-192x192.png',
+    tag: NOTIFICATION_TAG,
+    // Note: Removed 'silent: true' because some browsers require sound/vibration 
+    // to count it as a valid user-visible notification.
+  });
 
-    // 2. Fetch the actual data in the background
+  const updateNotificationPromise = async () => {
+    // Wait for the first notification to at least be "sent" to the system
+    await initialNotificationPromise;
+
     const userId = await getUserIdFromIDB();
-    if (!userId) {
-      // Fallback if ID is missing
-      return self.registration.showNotification('Stocker Alert', {
-        body: 'A stock price target has been hit. Open the app to view.',
-        tag: NOTIFICATION_TAG,
-        renotify: true
-      });
-    }
+    if (!userId) return;
 
     try {
+      // Fetch the actual triggered alert from the worker
       const response = await fetch(`${API_BASE_URL}/latest?userId=${encodeURIComponent(userId)}`);
-      if (!response.ok) throw new Error('Fetch failed');
+      if (!response.ok) throw new Error('Network response was not ok');
       
       const alert = await response.json();
       if (alert.error) throw new Error(alert.error);
 
-      // 3. REPLACE the generic notification with the real data
-      // Because the TAG is the same, the browser updates the existing notification
-      return self.registration.showNotification(`${alert.ticker} Target Hit!`, {
-        body: `${alert.ticker} has reached your target of ${alert.target_price}.`,
+      // Replace the "Checking..." notification with real data
+      // We use the same 'tag' so it replaces the existing one silently or with a single buzz
+      await self.registration.showNotification(`${alert.ticker} Target Hit!`, {
+        body: `${alert.ticker} reached ${alert.target_price}. View details in app.`,
         icon: '/icon-192x192.png',
         badge: '/icon-192x192.png',
         tag: NOTIFICATION_TAG,
-        renotify: true, // This makes it buzz/sound once we have real data
-        vibrate: [200, 100, 200],
-        data: {
-          url: self.location.origin,
-          ticker: alert.ticker
-        },
-        actions: [{ action: 'open', title: 'View Chart' }]
+        renotify: true, // Allow a second buzz for the real data
+        vibrate: [100, 50, 100],
+        data: { url: '/' }
       });
     } catch (e) {
-      console.error('[Service Worker] Fetch failed, keeping generic:', e);
-      // We don't need to do anything else; the generic notification from step 1 is already visible.
+      console.error('[Service Worker] Background fetch failed:', e);
+      // We don't need to do anything; the "Checking..." notification is already there.
     }
   };
 
-  event.waitUntil(processPush());
+  // event.waitUntil keeps the service worker alive until both are done
+  event.waitUntil(Promise.all([initialNotificationPromise, updateNotificationPromise()]));
 });
 
 self.addEventListener('notificationclick', (event) => {

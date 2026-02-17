@@ -1,10 +1,10 @@
 
 /*
- * Stocker Service Worker - Bulletproof Version
+ * Stocker Service Worker - FINAL STABLE VERSION
  */
 
 const API_BASE_URL = 'https://stocker-api.hilocal72.workers.dev';
-const NOTIFICATION_TAG = 'stocker-price-alert';
+const NOTIFICATION_TAG = 'stocker-alert-v1';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -15,99 +15,76 @@ self.addEventListener('activate', (event) => {
 });
 
 /**
- * Helper to get UserID from IndexedDB
+ * Robust IDB Getter
  */
-async function getUserIdFromIDB() {
+async function getUserId() {
   return new Promise((resolve) => {
     const request = indexedDB.open('StockerDB', 1);
     request.onerror = () => resolve(null);
     request.onsuccess = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains('settings')) {
-        resolve(null);
-        return;
-      }
-      try {
-        const tx = db.transaction('settings', 'readonly');
-        const store = tx.objectStore('settings');
-        const getReq = store.get('stkr_anon_id');
-        getReq.onsuccess = () => resolve(getReq.result || null);
-        getReq.onerror = () => resolve(null);
-      } catch (e) {
-        resolve(null);
-      }
+      if (!db.objectStoreNames.contains('settings')) return resolve(null);
+      const tx = db.transaction('settings', 'readonly');
+      const store = tx.objectStore('settings');
+      const getReq = store.get('stkr_anon_id');
+      getReq.onsuccess = () => resolve(getReq.result);
+      getReq.onerror = () => resolve(null);
     };
   });
 }
 
 /**
- * Main Push Handler
+ * PUSH EVENT HANDLER
  */
 self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push event received');
+  console.log('[SW] Push Received');
 
-  // STRATEGY: 
-  // We must show a notification IMMEDIATELY. 
-  // We do NOT await anything before showing the first one.
-  const initialNotificationPromise = self.registration.showNotification('Stocker Alert', {
-    body: 'Checking latest price targets...',
+  // 1. SHOW GENERIC NOTIFICATION IMMEDIATELY
+  // This is the "Guarantee". We do not await anything before this.
+  const promise = self.registration.showNotification('Stocker: Price Target Hit', {
+    body: 'One of your monitored stocks reached its target. Tap to view.',
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
-    tag: NOTIFICATION_TAG,
-    // Note: Removed 'silent: true' because some browsers require sound/vibration 
-    // to count it as a valid user-visible notification.
+    tag: NOTIFICATION_TAG, // Critical for replacement
+    vibrate: [100],
+    data: { url: '/' }
+  }).then(async () => {
+    // 2. NOW TRY TO GET SPECIFIC DATA
+    try {
+      const userId = await getUserId();
+      if (!userId) return;
+
+      const response = await fetch(`${API_BASE_URL}/latest?userId=${encodeURIComponent(userId)}`);
+      if (!response.ok) return;
+
+      const alert = await response.json();
+      if (alert && alert.ticker) {
+        // 3. REPLACE THE GENERIC NOTIFICATION WITH REAL DATA
+        // Because we use the same TAG, the browser just swaps the text.
+        return self.registration.showNotification(`${alert.ticker} Hit ${alert.target_price}!`, {
+          body: `Target triggered: ${alert.condition} ${alert.target_price}.`,
+          icon: '/icon-192x192.png',
+          badge: '/icon-192x192.png',
+          tag: NOTIFICATION_TAG, // Same tag = Replace
+          renotify: false, // Don't buzz twice, just update the text
+          data: { url: '/' }
+        });
+      }
+    } catch (e) {
+      console.error('[SW] Data fetch failed, keeping generic notification.');
+    }
   });
 
-  const updateNotificationPromise = async () => {
-    // Wait for the first notification to at least be "sent" to the system
-    await initialNotificationPromise;
-
-    const userId = await getUserIdFromIDB();
-    if (!userId) return;
-
-    try {
-      // Fetch the actual triggered alert from the worker
-      const response = await fetch(`${API_BASE_URL}/latest?userId=${encodeURIComponent(userId)}`);
-      if (!response.ok) throw new Error('Network response was not ok');
-      
-      const alert = await response.json();
-      if (alert.error) throw new Error(alert.error);
-
-      // Replace the "Checking..." notification with real data
-      // We use the same 'tag' so it replaces the existing one silently or with a single buzz
-      await self.registration.showNotification(`${alert.ticker} Target Hit!`, {
-        body: `${alert.ticker} reached ${alert.target_price}. View details in app.`,
-        icon: '/icon-192x192.png',
-        badge: '/icon-192x192.png',
-        tag: NOTIFICATION_TAG,
-        renotify: true, // Allow a second buzz for the real data
-        vibrate: [100, 50, 100],
-        data: { url: '/' }
-      });
-    } catch (e) {
-      console.error('[Service Worker] Background fetch failed:', e);
-      // We don't need to do anything; the "Checking..." notification is already there.
-    }
-  };
-
-  // event.waitUntil keeps the service worker alive until both are done
-  event.waitUntil(Promise.all([initialNotificationPromise, updateNotificationPromise()]));
+  // Keep the worker alive until the chain is complete
+  event.waitUntil(promise);
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = new URL('/', self.location.origin).href;
-
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+      if (clientList.length > 0) return clientList[0].focus();
+      return clients.openWindow('/');
     })
   );
 });

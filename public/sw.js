@@ -1,6 +1,6 @@
 
 /*
- * Stocker Service Worker - High-Performance Version
+ * Stocker Service Worker - Final Compliance Version
  */
 
 const API_BASE_URL = 'https://stocker-api.hilocal72.workers.dev';
@@ -15,8 +15,7 @@ self.addEventListener('activate', (event) => {
 });
 
 /**
- * High-Speed UserID Retrieval
- * Uses CacheStorage which is significantly faster than opening IDB in a background process.
+ * Fast ID Lookup
  */
 async function getFastUserId() {
   try {
@@ -31,51 +30,43 @@ async function getFastUserId() {
  * PUSH HANDLER
  */
 self.addEventListener('push', (event) => {
-  console.log('[SW] Push Received');
-
-  // STRATEGY: Show a meaningful placeholder IMMEDIATELY.
-  // We use a generic but descriptive message to satisfy the browser's 
-  // "User Visible" requirement instantly.
-  const initialNotification = self.registration.showNotification('Stocker: Market Update', {
-    body: 'One of your price targets was triggered.',
+  // 1. SHOW THE NOTIFICATION IMMEDIATELY
+  // We do not 'await' anything before this call. 
+  // This satisfies the browser's watchdog instantly.
+  const promise = self.registration.showNotification('Stocker: Price Alert', {
+    body: 'A stock has reached your target price.',
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
     tag: NOTIFICATION_TAG,
     vibrate: [100],
     data: { url: '/alerts' }
-  });
-
-  // Background Task: Attempt to fetch real data and update the notification
-  const updateTask = async () => {
+  }).then(async () => {
+    // 2. NOW (In the background) try to get real data to update the text.
     try {
-      // 1. Get ID from fast cache (nearly 0ms latency)
       const userId = await getFastUserId();
       if (!userId) return;
 
-      // 2. Fetch specific details
       const response = await fetch(`${API_BASE_URL}/latest?userId=${encodeURIComponent(userId)}`);
       if (!response.ok) return;
 
       const alert = await response.json();
       if (alert && alert.ticker) {
-        // 3. Replace the placeholder with actual stock data
-        // Browser swaps them seamlessly because of the 'tag'
+        // 3. Update the existing notification with real data
         return self.registration.showNotification(`${alert.ticker} Hit ${alert.target_price}!`, {
-          body: `Target triggered: ${alert.condition} ${alert.target_price}.`,
+          body: `Target reached: ${alert.condition} ${alert.target_price}.`,
           icon: '/icon-192x192.png',
           badge: '/icon-192x192.png',
           tag: NOTIFICATION_TAG, 
-          renotify: false, // Prevents a double-buzz
+          renotify: false, 
           data: { url: '/alerts' }
         });
       }
     } catch (e) {
-      console.error('[SW] Background update failed', e);
+      console.error('[SW] Data fetch failed, generic notification remains.');
     }
-  };
+  });
 
-  // Keep worker alive for both the initial show AND the update
-  event.waitUntil(Promise.all([initialNotification, updateTask()]));
+  event.waitUntil(promise);
 });
 
 self.addEventListener('notificationclick', (event) => {

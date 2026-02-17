@@ -41,18 +41,23 @@ self.addEventListener('push', (event) => {
   );
 });
 
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const urlToOpen = event.notification.data.url || '/';
-  
+self.addEventListener('push', (event) => {
+  let notificationData = {
+    title: 'Stocker Update',
+    body: 'A price alert was triggered.',
+    icon: '/icon-192x192.png'
+  };
+
+  // NEW LOGIC: Just read the data sent from the worker
+  if (event.data) {
+    try {
+      notificationData = event.data.json(); 
+    } catch (e) {
+      console.warn("Push event data was not valid JSON");
+    }
+  }
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes(urlToOpen) && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      return clients.openWindow(urlToOpen);
-    })
+    self.registration.showNotification(notificationData.title, notificationData)
   );
 });

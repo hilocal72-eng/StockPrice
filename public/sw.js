@@ -1,10 +1,10 @@
 
 /*
- * Stocker Service Worker - FINAL STABLE VERSION
+ * Stocker Service Worker - High-Performance Version
  */
 
 const API_BASE_URL = 'https://stocker-api.hilocal72.workers.dev';
-const NOTIFICATION_TAG = 'stocker-alert-v1';
+const NOTIFICATION_TAG = 'stocker-price-hit';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -15,68 +15,67 @@ self.addEventListener('activate', (event) => {
 });
 
 /**
- * Robust IDB Getter
+ * High-Speed UserID Retrieval
+ * Uses CacheStorage which is significantly faster than opening IDB in a background process.
  */
-async function getUserId() {
-  return new Promise((resolve) => {
-    const request = indexedDB.open('StockerDB', 1);
-    request.onerror = () => resolve(null);
-    request.onsuccess = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('settings')) return resolve(null);
-      const tx = db.transaction('settings', 'readonly');
-      const store = tx.objectStore('settings');
-      const getReq = store.get('stkr_anon_id');
-      getReq.onsuccess = () => resolve(getReq.result);
-      getReq.onerror = () => resolve(null);
-    };
-  });
+async function getFastUserId() {
+  try {
+    const cache = await caches.open('stocker-fast-id');
+    const response = await cache.match('/user-id');
+    if (response) return await response.text();
+  } catch (e) {}
+  return null;
 }
 
 /**
- * PUSH EVENT HANDLER
+ * PUSH HANDLER
  */
 self.addEventListener('push', (event) => {
   console.log('[SW] Push Received');
 
-  // 1. SHOW GENERIC NOTIFICATION IMMEDIATELY
-  // This is the "Guarantee". We do not await anything before this.
-  const promise = self.registration.showNotification('Stocker: Price Target Hit', {
-    body: 'One of your monitored stocks reached its target. Tap to view.',
+  // STRATEGY: Show a meaningful placeholder IMMEDIATELY.
+  // We use a generic but descriptive message to satisfy the browser's 
+  // "User Visible" requirement instantly.
+  const initialNotification = self.registration.showNotification('Stocker: Market Update', {
+    body: 'One of your price targets was triggered.',
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
-    tag: NOTIFICATION_TAG, // Critical for replacement
+    tag: NOTIFICATION_TAG,
     vibrate: [100],
-    data: { url: '/' }
-  }).then(async () => {
-    // 2. NOW TRY TO GET SPECIFIC DATA
+    data: { url: '/alerts' }
+  });
+
+  // Background Task: Attempt to fetch real data and update the notification
+  const updateTask = async () => {
     try {
-      const userId = await getUserId();
+      // 1. Get ID from fast cache (nearly 0ms latency)
+      const userId = await getFastUserId();
       if (!userId) return;
 
+      // 2. Fetch specific details
       const response = await fetch(`${API_BASE_URL}/latest?userId=${encodeURIComponent(userId)}`);
       if (!response.ok) return;
 
       const alert = await response.json();
       if (alert && alert.ticker) {
-        // 3. REPLACE THE GENERIC NOTIFICATION WITH REAL DATA
-        // Because we use the same TAG, the browser just swaps the text.
+        // 3. Replace the placeholder with actual stock data
+        // Browser swaps them seamlessly because of the 'tag'
         return self.registration.showNotification(`${alert.ticker} Hit ${alert.target_price}!`, {
           body: `Target triggered: ${alert.condition} ${alert.target_price}.`,
           icon: '/icon-192x192.png',
           badge: '/icon-192x192.png',
-          tag: NOTIFICATION_TAG, // Same tag = Replace
-          renotify: false, // Don't buzz twice, just update the text
-          data: { url: '/' }
+          tag: NOTIFICATION_TAG, 
+          renotify: false, // Prevents a double-buzz
+          data: { url: '/alerts' }
         });
       }
     } catch (e) {
-      console.error('[SW] Data fetch failed, keeping generic notification.');
+      console.error('[SW] Background update failed', e);
     }
-  });
+  };
 
-  // Keep the worker alive until the chain is complete
-  event.waitUntil(promise);
+  // Keep worker alive for both the initial show AND the update
+  event.waitUntil(Promise.all([initialNotification, updateTask()]));
 });
 
 self.addEventListener('notificationclick', (event) => {

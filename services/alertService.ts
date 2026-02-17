@@ -1,7 +1,7 @@
 
 import { Alert } from '../types.ts';
 
-// Cloudflare Worker URL - Updated to the current production endpoint
+// Cloudflare Worker URL
 const ALERT_WORKER_URL = 'https://stocker-api.hilocal72.workers.dev';
 
 const generateFallbackUUID = () => {
@@ -12,7 +12,12 @@ const generateFallbackUUID = () => {
   });
 };
 
-const syncIdToIDB = (id: string) => {
+/**
+ * Optimized Sync: Saves the ID to both IDB (for persistence) 
+ * and CacheStorage (for high-speed SW access).
+ */
+const syncIdToFastStorage = async (id: string) => {
+  // 1. Sync to IndexedDB
   const request = indexedDB.open('StockerDB', 1);
   request.onupgradeneeded = () => {
     const db = request.result;
@@ -26,6 +31,16 @@ const syncIdToIDB = (id: string) => {
     const store = tx.objectStore('settings');
     store.put(id, 'stkr_anon_id');
   };
+
+  // 2. Sync to CacheStorage (MUCH faster for SW to read)
+  if ('caches' in window) {
+    try {
+      const cache = await caches.open('stocker-fast-id');
+      await cache.put('/user-id', new Response(id));
+    } catch (e) {
+      console.warn("Fast-cache sync failed", e);
+    }
+  }
 };
 
 export const getAnonymousId = (): string => {
@@ -40,7 +55,7 @@ export const getAnonymousId = (): string => {
     }
     localStorage.setItem('stkr_anon_id', id);
   }
-  syncIdToIDB(id);
+  syncIdToFastStorage(id);
   return id;
 };
 
@@ -59,9 +74,6 @@ export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean
         condition: alert.condition
       }),
     });
-    if (!response.ok) {
-        console.error(`Create Alert Failed: ${response.status} ${await response.text()}`);
-    }
     return response.ok;
   } catch (error) {
     console.error('Alert creation failed:', error);
@@ -105,9 +117,6 @@ export const saveSubscription = async (subscription: PushSubscription): Promise<
       headers: { 'Content-Type': 'application/json', 'X-User-ID': anonId },
       body: JSON.stringify(subscription.toJSON()),
     });
-    if (!response.ok) {
-        console.error(`Save Subscription Failed: ${response.status} ${await response.text()}`);
-    }
     return response.ok;
   } catch (error) {
     console.error('Save subscription error:', error);

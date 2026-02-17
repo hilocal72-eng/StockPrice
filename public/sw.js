@@ -1,10 +1,11 @@
 
 /*
  * Stocker Service Worker
- * Robust Poke-and-Fetch Notification Handler
+ * "Immediate Shell" Pattern to prevent "Site updated in background"
  */
 
 const API_BASE_URL = 'https://stocker-api.hilocal72.workers.dev';
+const NOTIFICATION_TAG = 'stocker-price-alert';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -36,39 +37,49 @@ async function getUserIdFromIDB() {
   });
 }
 
+/**
+ * Main Push Handler
+ */
 self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push Received (Poke).');
-  
-  const NOTIFICATION_TAG = 'stocker-price-alert';
-  
-  // Logic: 
-  // 1. Get userId from IndexedDB
-  // 2. Fetch latest triggered alert from API
-  // 3. Show notification
-  const notificationPromise = (async () => {
+  console.log('[Service Worker] Push Received.');
+
+  const processPush = async () => {
+    // 1. IMMEDIATELY show a generic notification (The "Shell")
+    // This satisfies the browser's requirement to show something instantly.
+    await self.registration.showNotification('Stocker Alert', {
+      body: 'Processing price target...',
+      icon: '/icon-192x192.png',
+      badge: '/icon-192x192.png',
+      tag: NOTIFICATION_TAG, // Using a tag allows us to replace this later
+      silent: true // Start quiet while we fetch details
+    });
+
+    // 2. Fetch the actual data in the background
     const userId = await getUserIdFromIDB();
-    
     if (!userId) {
-      console.warn('[Service Worker] No UserID found in IndexedDB.');
+      // Fallback if ID is missing
       return self.registration.showNotification('Stocker Alert', {
-        body: 'A price target has been hit. Open the app to check your alerts.',
-        tag: NOTIFICATION_TAG
+        body: 'A stock price target has been hit. Open the app to view.',
+        tag: NOTIFICATION_TAG,
+        renotify: true
       });
     }
 
     try {
       const response = await fetch(`${API_BASE_URL}/latest?userId=${encodeURIComponent(userId)}`);
-      if (!response.ok) throw new Error('API Fetch failed');
+      if (!response.ok) throw new Error('Fetch failed');
       
       const alert = await response.json();
       if (alert.error) throw new Error(alert.error);
 
+      // 3. REPLACE the generic notification with the real data
+      // Because the TAG is the same, the browser updates the existing notification
       return self.registration.showNotification(`${alert.ticker} Target Hit!`, {
         body: `${alert.ticker} has reached your target of ${alert.target_price}.`,
         icon: '/icon-192x192.png',
         badge: '/icon-192x192.png',
         tag: NOTIFICATION_TAG,
-        renotify: true,
+        renotify: true, // This makes it buzz/sound once we have real data
         vibrate: [200, 100, 200],
         data: {
           url: self.location.origin,
@@ -77,21 +88,16 @@ self.addEventListener('push', (event) => {
         actions: [{ action: 'open', title: 'View Chart' }]
       });
     } catch (e) {
-      console.error('[Service Worker] Fetch failed, showing fallback:', e);
-      return self.registration.showNotification('Stocker Price Alert', {
-        body: 'One of your monitored stocks hit a target price!',
-        tag: NOTIFICATION_TAG
-      });
+      console.error('[Service Worker] Fetch failed, keeping generic:', e);
+      // We don't need to do anything else; the generic notification from step 1 is already visible.
     }
-  })();
+  };
 
-  event.waitUntil(notificationPromise);
+  event.waitUntil(processPush());
 });
 
 self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification Clicked.');
   event.notification.close();
-
   const urlToOpen = new URL('/', self.location.origin).href;
 
   event.waitUntil(

@@ -1,3 +1,4 @@
+
 import { Alert } from '../types.ts';
 
 // Cloudflare Worker URL - Updated to the current production endpoint
@@ -58,6 +59,9 @@ export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean
         condition: alert.condition
       }),
     });
+    if (!response.ok) {
+        console.error(`Create Alert Failed: ${response.status} ${await response.text()}`);
+    }
     return response.ok;
   } catch (error) {
     console.error('Alert creation failed:', error);
@@ -101,6 +105,9 @@ export const saveSubscription = async (subscription: PushSubscription): Promise<
       headers: { 'Content-Type': 'application/json', 'X-User-ID': anonId },
       body: JSON.stringify(subscription.toJSON()),
     });
+    if (!response.ok) {
+        console.error(`Save Subscription Failed: ${response.status} ${await response.text()}`);
+    }
     return response.ok;
   } catch (error) {
     console.error('Save subscription error:', error);

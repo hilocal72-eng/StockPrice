@@ -1,6 +1,6 @@
-
 /**
- * STOCKER - FULL ENGINE WORKER (ENCRYPTED PAYLOAD VERSION)
+ * STOCKER - FULL ENGINE WORKER
+ * Optimized for Cloudflare Workers with fixed type overloads.
  */
 
 export default {
@@ -21,11 +21,13 @@ export default {
     try {
       if (path === '/health') return Response.json({ status: "ok" }, { headers: corsHeaders });
 
+      // Get Alerts
       if ((path === '' || path === '/') && request.method === 'GET') {
         const { results } = await env.DB.prepare("SELECT * FROM alerts WHERE userId = ? ORDER BY created_at DESC").bind(userId).all();
         return Response.json(results || [], { headers: corsHeaders });
       }
 
+      // Create Alert
       if ((path === '' || path === '/') && request.method === 'POST') {
         const alert = await request.json();
         const res = await env.DB.prepare(
@@ -34,6 +36,7 @@ export default {
         return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
       }
 
+      // WebPush Subscriptions
       if (path === '/subscribe' && request.method === 'POST') {
         const sub = await request.json();
         await env.DB.prepare("INSERT OR REPLACE INTO subscriptions (userId, subscription_json) VALUES (?, ?)")
@@ -46,6 +49,7 @@ export default {
         return Response.json({ success: true }, { headers: corsHeaders });
       }
 
+      // Delete Alert
       if (request.method === 'DELETE') {
         const id = path.split('/').filter(Boolean).pop();
         if (!isNaN(Number(id))) {
@@ -60,12 +64,16 @@ export default {
     }
   },
 
+  /**
+   * Periodic check for triggered alerts
+   */
   async scheduled(event, env) {
     const { results: alerts } = await env.DB.prepare("SELECT * FROM alerts WHERE status = 'active'").all();
     if (!alerts || alerts.length === 0) return;
 
     const uniqueTickers = [...new Set(alerts.map(a => a.ticker))];
     const priceMap = {};
+    
     await Promise.all(uniqueTickers.map(async (ticker) => {
       const price = await fetchYahooPrice(ticker);
       if (price !== null) priceMap[ticker] = price;
@@ -80,13 +88,14 @@ export default {
         (alert.condition === 'below' && currentPrice <= alert.target_price);
 
       if (isHit) {
+        // Mark as triggered first to prevent double-sends
         const updateResult = await env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ? AND status = 'active'")
           .bind(alert.id).run();
 
         if (updateResult.meta.changes > 0) {
           const payload = {
-            title: `${alert.ticker} Hit ${alert.target_price}!`,
-            body: `Target reached: ${alert.condition} ${alert.target_price}. Current: ${currentPrice.toFixed(2)}`,
+            title: `Target Hit: ${alert.ticker}`,
+            body: `${alert.ticker} reached ${alert.target_price}. Current: ${currentPrice.toFixed(2)}`,
             url: '/alerts'
           };
           await sendEncryptedPush(env, alert.userId, payload);
@@ -106,10 +115,6 @@ async function fetchYahooPrice(ticker) {
   } catch (e) { return null; }
 }
 
-/**
- * WEB PUSH ENCRYPTION (RFC 8291)
- * This is the logic push.foo uses.
- */
 async function sendEncryptedPush(env, userId, payloadObj) {
   const subRow = await env.DB.prepare("SELECT subscription_json FROM subscriptions WHERE userId = ?").bind(userId).first();
   if (!subRow) return;
@@ -117,7 +122,6 @@ async function sendEncryptedPush(env, userId, payloadObj) {
   const sub = JSON.parse(subRow.subscription_json);
   const payload = new TextEncoder().encode(JSON.stringify(payloadObj));
 
-  // 1. Generate VAPID Token
   const endpoint = new URL(sub.endpoint);
   const jwtHeader = b64Url(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
   const jwtPayload = b64Url(JSON.stringify({
@@ -125,13 +129,13 @@ async function sendEncryptedPush(env, userId, payloadObj) {
     exp: Math.floor(Date.now() / 1000) + 43200,
     sub: 'mailto:admin@stocker.app'
   }));
-  const signature = await signEcdsa(`${jwtHeader}.${jwtPayload}`, env.VAPID_PRIVATE_KEY);
+  
+  const privateKeyRaw = env['VAPID_PRIVATE_KEY'];
+  const signature = await signEcdsa(`${jwtHeader}.${jwtPayload}`, privateKeyRaw);
   const vapidToken = `${jwtHeader}.${jwtPayload}.${signature}`;
 
-  // 2. Encrypt Payload
-  const { encryptedPayload, localPubKey, salt } = await encryptWebPush(sub, payload);
+  const { encryptedPayload } = await encryptWebPush(sub, payload);
 
-  // 3. Send
   await fetch(sub.endpoint, {
     method: 'POST',
     body: encryptedPayload,
@@ -145,68 +149,89 @@ async function sendEncryptedPush(env, userId, payloadObj) {
 }
 
 /**
- * ENCRYPTION ENGINE
+ * MANDATORY WEB PUSH ENCRYPTION (AES-128-GCM)
  */
 async function encryptWebPush(subscription, payload) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const localKeyPair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  
+  // Generate local key pair for the handshake
+  const keyPair = await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' }, 
+    true, 
+    ['deriveBits']
+  );
   
   const serverPubKey = await crypto.subtle.importKey(
-    'raw', b64ToUint8(subscription.keys.p256dh), 
-    { name: 'ECDH', namedCurve: 'P-256' }, true, []
+    'raw', 
+    b64ToUint8(subscription.keys.p256dh), 
+    { name: 'ECDH', namedCurve: 'P-256' }, 
+    true, 
+    []
   );
 
+  // Use 'any' cast for deriveBits to resolve union type issue in CF Editor
   const sharedSecret = await crypto.subtle.deriveBits(
-    { name: 'ECDH', public: serverPubKey }, localKeyPair.privateKey, 256
+    { name: 'ECDH', public: serverPubKey }, 
+    keyPair.privateKey, 
+    256
   );
 
-  const authSecret = b64ToUint8(subscription.keys.auth);
-  const localPublicKeyRaw = new Uint8Array(await crypto.subtle.exportKey('raw', localKeyPair.publicKey));
+  const exportedLocalPub = await crypto.subtle.exportKey('raw', keyPair.publicKey);
+  const localPublicKeyRaw = new Uint8Array(/** @type {any} */ (exportedLocalPub));
 
-  // HKDF Helper
-  const ikm = await hmacSha256(authSecret, sharedSecret, 'WebPush: info' + '\0' + subscription.keys.p256dh + localPublicKeyRaw);
+  const prk = await hmacSha256(salt, new Uint8Array(/** @type {any} */ (sharedSecret)));
   
-  // Content Encryption Key (CEK) & Nonce derivation
-  const prk = await hmacSha256(salt, sharedSecret, "Content-Encoding: auth\0");
   const cekInfo = new TextEncoder().encode("Content-Encoding: aes128gcm\0");
   const nonceInfo = new TextEncoder().encode("Content-Encoding: nonce\0");
 
   const cek = (await hmacSha256(prk, cekInfo)).slice(0, 16);
   const nonce = (await hmacSha256(prk, nonceInfo)).slice(0, 12);
 
-  // AES-GCM Encryption
   const aesKey = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
   
-  // Padding (record size)
   const padding = new Uint8Array([0, 0]); 
   const dataToEncrypt = new Uint8Array(padding.length + payload.length);
   dataToEncrypt.set(padding);
   dataToEncrypt.set(payload, padding.length);
 
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, dataToEncrypt);
+  const ciphertextBuffer = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, dataToEncrypt);
+  const ciphertext = new Uint8Array(/** @type {any} */ (ciphertextBuffer));
 
-  // Final Format: [salt(16)] [rs(4)] [idlen(1)] [pubkey(65)] [ciphertext]
+  // Construct final Web Push binary structure
   const final = new Uint8Array(16 + 4 + 1 + 65 + ciphertext.byteLength);
   final.set(salt, 0);
-  final.set(new Uint8Array([0, 0, 16, 0]), 16); // Record size (4096 default)
-  final.set([65], 20); // Public Key Length
+  final.set(new Uint8Array([0, 0, 16, 0]), 16); 
+  final.set([65], 20); 
   final.set(localPublicKeyRaw, 21);
-  final.set(new Uint8Array(ciphertext), 21 + 65);
+  final.set(ciphertext, 21 + 65);
 
   return { encryptedPayload: final };
 }
 
-async function hmacSha256(key, data, info = "") {
-  const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const msg = typeof info === 'string' ? new TextEncoder().encode(info + data) : data;
-  return new Uint8Array(await crypto.subtle.sign('HMAC', k, msg));
+async function hmacSha256(key, data) {
+  const k = await crypto.subtle.importKey(
+    'raw', 
+    key, 
+    { name: 'HMAC', hash: 'SHA-256' }, 
+    false, 
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', k, data);
+  return new Uint8Array(/** @type {any} */ (signature));
 }
 
 async function signEcdsa(data, privateKeyB64) {
   const binary = b64ToUint8(privateKeyB64.replace(/---.*---|\n/g, ''));
-  const key = await crypto.subtle.importKey("pkcs8", binary.length === 32 ? wrap32(binary) : binary, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const keyData = binary.length === 32 ? wrap32(binary) : binary;
+  const key = await crypto.subtle.importKey(
+    "pkcs8", 
+    /** @type {any} */ (keyData), 
+    { name: "ECDSA", namedCurve: "P-256" }, 
+    false, 
+    ["sign"]
+  );
   const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(data));
-  return b64Url(new Uint8Array(sig));
+  return b64Url(new Uint8Array(/** @type {any} */ (sig)));
 }
 
 function wrap32(bin) {

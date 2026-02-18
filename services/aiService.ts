@@ -56,7 +56,7 @@ export const getAIIntelligenceReport = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-flash-latest",
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -163,7 +163,7 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-flash-latest",
       contents: prompt,
       config: {
         responseMimeType: "application/json",

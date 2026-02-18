@@ -1,6 +1,8 @@
+
 /**
  * STOCKER - PROFESSIONAL PWA ENGINE
  * Handles OS-level background push notifications via WebPush protocol.
+ * Includes detailed logging for debugging WebPush handshake issues.
  */
 
 export default {
@@ -13,6 +15,8 @@ export default {
     const path = url.pathname.replace(/\/$/, ""); 
     const userId = url.searchParams.get('userId') || request.headers.get('X-User-ID');
 
+    console.log(`[Fetch] Incoming ${request.method} request to ${path} | UserID: ${userId || 'anonymous'}`);
+
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
@@ -20,7 +24,10 @@ export default {
     };
 
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-    if (!userId && path !== '/health') return Response.json({ error: "Missing UserID" }, { status: 400, headers: corsHeaders });
+    if (!userId && path !== '/health') {
+      console.warn(`[Fetch] Rejected: Missing UserID for path ${path}`);
+      return Response.json({ error: "Missing UserID" }, { status: 400, headers: corsHeaders });
+    }
 
     try {
       if (path === '/health') return Response.json({ status: "ok" }, { headers: corsHeaders });
@@ -28,11 +35,13 @@ export default {
       // CRUD Operations for Alerts
       if ((path === '' || path === '/') && request.method === 'GET') {
         const { results } = await env.DB.prepare("SELECT * FROM alerts WHERE userId = ? ORDER BY created_at DESC").bind(userId).all();
+        console.log(`[Fetch] Retrieved ${results?.length || 0} alerts for user ${userId}`);
         return Response.json(results || [], { headers: corsHeaders });
       }
 
       if ((path === '' || path === '/') && request.method === 'POST') {
         const alert = await request.json();
+        console.log(`[Fetch] Creating new alert for ${alert.ticker} at ${alert.target_price} (${alert.condition})`);
         const res = await env.DB.prepare(
           "INSERT INTO alerts (userId, ticker, target_price, condition, status) VALUES (?, ?, ?, ?, 'active')"
         ).bind(userId, alert.ticker, Number(alert.target_price), alert.condition).run();
@@ -42,12 +51,14 @@ export default {
       // Subscription Management
       if (path === '/subscribe' && request.method === 'POST') {
         const sub = await request.json();
+        console.log(`[Fetch] Updating push subscription for user ${userId}. Endpoint: ${sub.endpoint?.substring(0, 30)}...`);
         await env.DB.prepare("INSERT OR REPLACE INTO subscriptions (userId, subscription_json) VALUES (?, ?)")
           .bind(userId, JSON.stringify(sub)).run();
         return Response.json({ success: true }, { headers: corsHeaders });
       }
 
       if (path === '/unsubscribe' && request.method === 'POST') {
+        console.log(`[Fetch] Removing subscription for user ${userId}`);
         await env.DB.prepare("DELETE FROM subscriptions WHERE userId = ?").bind(userId).run();
         return Response.json({ success: true }, { headers: corsHeaders });
       }
@@ -55,6 +66,7 @@ export default {
       if (request.method === 'DELETE') {
         const id = path.split('/').filter(Boolean).pop();
         if (!isNaN(Number(id))) {
+          console.log(`[Fetch] Deleting alert ID ${id} for user ${userId}`);
           await env.DB.prepare("DELETE FROM alerts WHERE id = ? AND userId = ?").bind(Number(id), userId).run();
           return Response.json({ success: true }, { headers: corsHeaders });
         }
@@ -62,6 +74,7 @@ export default {
 
       return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
     } catch (e) {
+      console.error(`[Fetch] Error in ${path}: ${e.message}`);
       return Response.json({ error: e.message }, { status: 500, headers: corsHeaders });
     }
   },
@@ -70,15 +83,27 @@ export default {
    * Background monitor: This runs even when no users are online.
    */
   async scheduled(event, env) {
+    console.log(`[Scheduled] Job started at ${new Date().toISOString()}`);
+    
     const { results: alerts } = await env.DB.prepare("SELECT * FROM alerts WHERE status = 'active'").all();
-    if (!alerts || alerts.length === 0) return;
+    if (!alerts || alerts.length === 0) {
+      console.log(`[Scheduled] No active alerts found. Exiting.`);
+      return;
+    }
+
+    console.log(`[Scheduled] Processing ${alerts.length} active alerts.`);
 
     const uniqueTickers = [...new Set(alerts.map(a => a.ticker))];
     const priceMap = {};
     
     await Promise.all(uniqueTickers.map(async (ticker) => {
       const price = await fetchYahooPrice(ticker);
-      if (price !== null) priceMap[ticker] = price;
+      if (price !== null) {
+        priceMap[ticker] = price;
+        console.log(`[Scheduled] Fetched price for ${ticker}: ${price}`);
+      } else {
+        console.warn(`[Scheduled] Failed to fetch price for ${ticker}`);
+      }
     }));
 
     for (const alert of alerts) {
@@ -90,10 +115,13 @@ export default {
         (alert.condition === 'below' && currentPrice <= alert.target_price);
 
       if (isHit) {
+        console.log(`[Scheduled] ALERT HIT: ${alert.ticker} hit ${currentPrice} (Target: ${alert.target_price} ${alert.condition})`);
+        
         const updateResult = await env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ? AND status = 'active'")
           .bind(alert.id).run();
 
         if (updateResult.meta.changes > 0) {
+          console.log(`[Scheduled] Triggering push for user ${alert.userId}`);
           // Send to Push Service (Google/Apple)
           const payload = {
             title: `Target Hit: ${alert.ticker}`,
@@ -118,38 +146,84 @@ async function fetchYahooPrice(ticker) {
 }
 
 async function sendEncryptedPush(env, userId, payloadObj) {
+  console.log(`[Push] Starting push sequence for ${userId}`);
+  
   const subRow = await env.DB.prepare("SELECT subscription_json FROM subscriptions WHERE userId = ?").bind(userId).first();
-  if (!subRow) return;
+  if (!subRow) {
+    console.warn(`[Push] No subscription found in DB for user ${userId}. Cannot send push.`);
+    return;
+  }
 
   const sub = JSON.parse(subRow.subscription_json);
   const payload = new TextEncoder().encode(JSON.stringify(payloadObj));
-
   const endpoint = new URL(sub.endpoint);
   
-  // VAPID Auth for Push Service identification
-  const jwtHeader = b64Url(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
-  const jwtPayload = b64Url(JSON.stringify({
-    aud: `${endpoint.protocol}//${endpoint.host}`,
-    exp: Math.floor(Date.now() / 1000) + 43200,
-    sub: 'mailto:admin@stocker.app'
-  }));
-  
-  const privateKeyRaw = env['VAPID_PRIVATE_KEY'];
-  const signature = await signEcdsa(`${jwtHeader}.${jwtPayload}`, privateKeyRaw);
-  const vapidToken = `${jwtHeader}.${jwtPayload}.${signature}`;
+  console.log(`[Push] Targeted endpoint: ${endpoint.host}`);
 
-  const { encryptedPayload } = await encryptWebPush(sub, payload);
+  try {
+    // VAPID Auth for Push Service identification
+    const jwtHeader = b64Url(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+    const jwtPayload = b64Url(JSON.stringify({
+      aud: `${endpoint.protocol}//${endpoint.host}`,
+      exp: Math.floor(Date.now() / 1000) + 43200,
+      sub: 'mailto:admin@stocker.app'
+    }));
+    
+    const privateKeyRaw = env['VAPID_PRIVATE_KEY'];
+    const publicKeyRaw = env['VAPID_PUBLIC_KEY']; // CRITICAL: Now required for the Crypto-Key header
+    
+    if (!privateKeyRaw) {
+      console.error("[Push] FATAL: VAPID_PRIVATE_KEY is missing from environment variables.");
+      return;
+    }
 
-  await fetch(sub.endpoint, {
-    method: 'POST',
-    body: encryptedPayload,
-    headers: {
+    const signature = await signEcdsa(`${jwtHeader}.${jwtPayload}`, privateKeyRaw);
+    const vapidToken = `${jwtHeader}.${jwtPayload}.${signature}`;
+
+    console.log(`[Push] VAPID Token generated successfully.`);
+
+    const { encryptedPayload } = await encryptWebPush(sub, payload);
+    console.log(`[Push] Payload encrypted (AES-128-GCM).`);
+
+    // Headers for WebPush
+    const headers = {
       'TTL': '60',
       'Urgency': 'high',
       'Content-Encoding': 'aes128gcm',
       'Authorization': `WebPush ${vapidToken}`
+    };
+
+    // FIX: Add Crypto-Key header if Public Key is available.
+    // This resolves the "permission denied: crypto-key header had no public application server key" error.
+    if (publicKeyRaw) {
+      headers['Crypto-Key'] = `p256ecdsa=${publicKeyRaw.replace(/=+$/, '')}`;
+      console.log(`[Push] Added Crypto-Key header with Public VAPID Key.`);
+    } else {
+      console.warn(`[Push] VAPID_PUBLIC_KEY missing in ENV. This might cause failures on FCM/Chrome endpoints.`);
     }
-  });
+
+    const pushResponse = await fetch(sub.endpoint, {
+      method: 'POST',
+      body: encryptedPayload,
+      headers: headers
+    });
+
+    console.log(`[Push] Service Response: ${pushResponse.status} ${pushResponse.statusText}`);
+    
+    if (!pushResponse.ok) {
+      const errorText = await pushResponse.text();
+      console.error(`[Push] Service Error Body: ${errorText}`);
+      
+      if (pushResponse.status === 410 || pushResponse.status === 404) {
+        console.warn(`[Push] Subscription expired or gone. Removing from DB.`);
+        await env.DB.prepare("DELETE FROM subscriptions WHERE userId = ?").bind(userId).run();
+      }
+    } else {
+      console.log(`[Push] Notification successfully accepted by push service.`);
+    }
+  } catch (e) {
+    console.error(`[Push] Handshake/Execution Exception: ${e.message}`);
+  }
 }
 
 /**
@@ -167,6 +241,10 @@ async function encryptWebPush(subscription, payload) {
   
   const localPrivateKey = keyPair.privateKey;
   const localPublicKey = keyPair.publicKey;
+
+  if (!subscription.keys || !subscription.keys.p256dh) {
+    throw new Error("Missing p256dh key in subscription object.");
+  }
 
   const serverPubKey = await crypto.subtle.importKey(
     'raw', 

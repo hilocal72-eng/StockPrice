@@ -1,0 +1,46 @@
+{
+  "name": "Stocker - Professional Stock Analysis",
+  "short_name": "Stocker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#010203",
+  "lang": "en",
+  "scope": "/",
+  "description": "A comprehensive stock market dashboard featuring advanced charting, 5-day historical data analysis, and a personalized favorites list.",
+  "theme_color": "#010203",
+  "icons": [
+    {
+      "src": "icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-mobile.png",
+      "sizes": "540x1080",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Mobile View"
+    },
+    {
+      "src": "screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Desktop Dashboard"
+    }
+  ],
+  "orientation": "portrait-primary"
+}

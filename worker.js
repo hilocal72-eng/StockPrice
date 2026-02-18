@@ -1,9 +1,13 @@
 /**
- * STOCKER - FULL ENGINE WORKER
- * Optimized for Cloudflare Workers with fixed type overloads.
+ * STOCKER - FULL ENGINE WORKER (ENCRYPTED PAYLOAD VERSION)
+ * Optimized for Cloudflare Workers with strict type checking.
  */
 
 export default {
+  /**
+   * @param {Request} request
+   * @param {any} env
+   */
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, ""); 
@@ -21,13 +25,11 @@ export default {
     try {
       if (path === '/health') return Response.json({ status: "ok" }, { headers: corsHeaders });
 
-      // Get Alerts
       if ((path === '' || path === '/') && request.method === 'GET') {
         const { results } = await env.DB.prepare("SELECT * FROM alerts WHERE userId = ? ORDER BY created_at DESC").bind(userId).all();
         return Response.json(results || [], { headers: corsHeaders });
       }
 
-      // Create Alert
       if ((path === '' || path === '/') && request.method === 'POST') {
         const alert = await request.json();
         const res = await env.DB.prepare(
@@ -36,7 +38,6 @@ export default {
         return Response.json({ success: true, id: res.meta.last_row_id }, { headers: corsHeaders });
       }
 
-      // WebPush Subscriptions
       if (path === '/subscribe' && request.method === 'POST') {
         const sub = await request.json();
         await env.DB.prepare("INSERT OR REPLACE INTO subscriptions (userId, subscription_json) VALUES (?, ?)")
@@ -49,7 +50,6 @@ export default {
         return Response.json({ success: true }, { headers: corsHeaders });
       }
 
-      // Delete Alert
       if (request.method === 'DELETE') {
         const id = path.split('/').filter(Boolean).pop();
         if (!isNaN(Number(id))) {
@@ -65,7 +65,8 @@ export default {
   },
 
   /**
-   * Periodic check for triggered alerts
+   * @param {any} event
+   * @param {any} env
    */
   async scheduled(event, env) {
     const { results: alerts } = await env.DB.prepare("SELECT * FROM alerts WHERE status = 'active'").all();
@@ -73,7 +74,6 @@ export default {
 
     const uniqueTickers = [...new Set(alerts.map(a => a.ticker))];
     const priceMap = {};
-    
     await Promise.all(uniqueTickers.map(async (ticker) => {
       const price = await fetchYahooPrice(ticker);
       if (price !== null) priceMap[ticker] = price;
@@ -88,7 +88,6 @@ export default {
         (alert.condition === 'below' && currentPrice <= alert.target_price);
 
       if (isHit) {
-        // Mark as triggered first to prevent double-sends
         const updateResult = await env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ? AND status = 'active'")
           .bind(alert.id).run();
 
@@ -149,18 +148,22 @@ async function sendEncryptedPush(env, userId, payloadObj) {
 }
 
 /**
- * MANDATORY WEB PUSH ENCRYPTION (AES-128-GCM)
+ * @param {any} subscription
+ * @param {Uint8Array} payload
  */
 async function encryptWebPush(subscription, payload) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   
-  // Generate local key pair for the handshake
+  /** @type {any} */
   const keyPair = await crypto.subtle.generateKey(
     { name: 'ECDH', namedCurve: 'P-256' }, 
     true, 
     ['deriveBits']
   );
   
+  const localPrivateKey = keyPair.privateKey;
+  const localPublicKey = keyPair.publicKey;
+
   const serverPubKey = await crypto.subtle.importKey(
     'raw', 
     b64ToUint8(subscription.keys.p256dh), 
@@ -169,17 +172,23 @@ async function encryptWebPush(subscription, payload) {
     []
   );
 
-  // Use 'any' cast for deriveBits to resolve union type issue in CF Editor
+  // We build params as any to avoid 'public' keyword type issues in specific environments
+  const deriveParams = { name: 'ECDH' };
+  deriveParams['public'] = serverPubKey;
+
+  // deriveBits returns ArrayBuffer
   const sharedSecret = await crypto.subtle.deriveBits(
-    { name: 'ECDH', public: serverPubKey }, 
-    keyPair.privateKey, 
+    /** @type {any} */ (deriveParams), 
+    localPrivateKey, 
     256
   );
 
-  const exportedLocalPub = await crypto.subtle.exportKey('raw', keyPair.publicKey);
-  const localPublicKeyRaw = new Uint8Array(/** @type {any} */ (exportedLocalPub));
+  // exportKey returns ArrayBuffer | JsonWebKey. Cast to any for Uint8Array constructor.
+  const exportedKey = await crypto.subtle.exportKey('raw', localPublicKey);
+  const localPublicKeyRaw = new Uint8Array(/** @type {any} */ (exportedKey));
 
-  const prk = await hmacSha256(salt, new Uint8Array(/** @type {any} */ (sharedSecret)));
+  const sharedSecretBuffer = new Uint8Array(/** @type {any} */ (sharedSecret));
+  const prk = await hmacSha256(salt, sharedSecretBuffer);
   
   const cekInfo = new TextEncoder().encode("Content-Encoding: aes128gcm\0");
   const nonceInfo = new TextEncoder().encode("Content-Encoding: nonce\0");
@@ -194,10 +203,10 @@ async function encryptWebPush(subscription, payload) {
   dataToEncrypt.set(padding);
   dataToEncrypt.set(payload, padding.length);
 
+  // encrypt returns ArrayBuffer
   const ciphertextBuffer = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, dataToEncrypt);
   const ciphertext = new Uint8Array(/** @type {any} */ (ciphertextBuffer));
 
-  // Construct final Web Push binary structure
   const final = new Uint8Array(16 + 4 + 1 + 65 + ciphertext.byteLength);
   final.set(salt, 0);
   final.set(new Uint8Array([0, 0, 16, 0]), 16); 
@@ -208,18 +217,28 @@ async function encryptWebPush(subscription, payload) {
   return { encryptedPayload: final };
 }
 
+/** 
+ * @param {Uint8Array} key 
+ * @param {Uint8Array} data 
+ * @returns {Promise<Uint8Array>}
+ */
 async function hmacSha256(key, data) {
   const k = await crypto.subtle.importKey(
     'raw', 
-    key, 
+    /** @type {any} */ (key), 
     { name: 'HMAC', hash: 'SHA-256' }, 
     false, 
     ['sign']
   );
+  // sign returns ArrayBuffer
   const signature = await crypto.subtle.sign('HMAC', k, data);
   return new Uint8Array(/** @type {any} */ (signature));
 }
 
+/**
+ * @param {string} data
+ * @param {string} privateKeyB64
+ */
 async function signEcdsa(data, privateKeyB64) {
   const binary = b64ToUint8(privateKeyB64.replace(/---.*---|\n/g, ''));
   const keyData = binary.length === 32 ? wrap32(binary) : binary;
@@ -230,6 +249,7 @@ async function signEcdsa(data, privateKeyB64) {
     false, 
     ["sign"]
   );
+  // sign returns ArrayBuffer
   const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(data));
   return b64Url(new Uint8Array(/** @type {any} */ (sig)));
 }

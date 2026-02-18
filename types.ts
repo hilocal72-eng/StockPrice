@@ -69,6 +69,15 @@ export interface Alert {
   created_at?: string;
 }
 
+export interface TechnicalIndicators {
+  rsi: number;
+  sma50: number;
+  sma200: number;
+  ema20: number;
+  supportLevels: number[];
+  resistanceLevels: number[];
+}
+
 export interface AIAnalysisResult {
   newsSummary: string;
   newsBullets: string[];
@@ -85,6 +94,7 @@ export interface AIAnalysisResult {
     target2: number;
     stopLoss: number;
   };
+  technicalData?: TechnicalIndicators;
 }
 
 export interface WatchlistStockAnalysis {

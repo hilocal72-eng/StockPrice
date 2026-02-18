@@ -41,22 +41,22 @@ export const subscribeUser = async (): Promise<boolean> => {
   try {
     const registration = await navigator.serviceWorker.ready;
     
-    // 1. Force clear any existing subscription to ensure we use the NEW key
-    const oldSub = await registration.pushManager.getSubscription();
-    if (oldSub) {
-      await oldSub.unsubscribe();
-      console.log('Discarded old subscription');
+    // 1. Get existing subscription
+    const existingSubscription = await registration.pushManager.getSubscription();
+    
+    // 2. FORCE UNSUBSCRIBE to clear out any old VAPID keys/sessions
+    if (existingSubscription) {
+      await existingSubscription.unsubscribe();
+      console.log('Cleared old subscription');
     }
 
-    // 2. Create a fresh subscription with the CURRENT key
+    // 3. NOW create the fresh one with the current VAPID_PUBLIC_KEY
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
 
-    console.log('New Subscription created successfully');
-    
-    // 3. Save to your D1 database
+    console.log('Created fresh subscription:', subscription);
     return await saveSubscription(subscription);
   } catch (error) {
     console.error('Subscription failed:', error);

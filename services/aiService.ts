@@ -1,5 +1,7 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { PricePoint, AIAnalysisResult, StockDetails, WatchlistStockAnalysis } from "../types.ts";
+import { getTechnicalIndicators } from "./technicalAnalysis.ts";
 
 const getAI = () => {
   const apiKey = process.env.API_KEY;
@@ -11,6 +13,7 @@ const getAI = () => {
 
 /**
  * Generates a detailed intelligence report using Gemini 3 Pro with Google Search grounding.
+ * HYBRID MODEL: Local Math Layer + AI Reasoning Layer.
  */
 export const getAIIntelligenceReport = async (
   ticker: string,
@@ -19,26 +22,33 @@ export const getAIIntelligenceReport = async (
 ): Promise<AIAnalysisResult | null> => {
   try {
     const ai = getAI();
-    // Prepare historical context for the model
-    const historySnippet = history.slice(-50).map(p => 
-      `T:${new Date(p.time * 1000).toISOString()} O:${p.open} H:${p.high} L:${p.low} C:${p.close} V:${p.volume}`
-    ).join('\n');
-
+    
+    // --- HYBRID STEP: LOCAL MATH LAYER ---
+    const techData = getTechnicalIndicators(history);
+    
     const prompt = `
-      Act as a world-class senior financial analyst. Analyze the stock: ${ticker} (Current Price: ${currentPrice}).
+      Act as a world-class senior financial analyst. 
+      Analyze the stock: ${ticker} (Current Price: ${currentPrice}).
       
-      OHLC DATA (Last 50 entries):
-      ${historySnippet}
+      VERIFIED TECHNICAL DATA (Math Layer):
+      - RSI (14): ${techData.rsi}
+      - SMA (50): ${techData.sma50}
+      - SMA (200): ${techData.sma200}
+      - EMA (20): ${techData.ema20}
+      - Calculated Support Levels: ${techData.supportLevels.join(', ')}
+      - Calculated Resistance Levels: ${techData.resistanceLevels.join(', ')}
 
       TASKS:
       1. Use Google Search to find recent news for ${ticker}. 
          - Provide exactly 3 concise, impactful bullet points in 'newsBullets'.
-      2. Identify 3 key support levels and 3 key resistance levels based on price history.
-      3. Scan for technical patterns. IMPORTANT: Include the date the pattern was observed in brackets, e.g., "Double Bottom (Feb 12)".
-      4. Provide a definitive signal: "BUY", "SELL", or "NO OPPORTUNITY". 
-         - signalReasoning: Exactly 3 concise bullet points explaining why.
-      5. technicalSummary: Exactly 3 concise bullet points summarizing the technical outlook.
-      6. If BUY or SELL: Provide entry price, Target 1, Target 2, and Stop Loss.
+      2. Analyze the provided Math Layer data (RSI, MAs) to form a trade hypothesis.
+      3. Identify any additional 3 support/resistance levels if necessary, or confirm the calculated ones.
+      4. Scan for technical patterns. Include date in brackets, e.g., "Cup & Handle (Feb 15)".
+      5. Provide a definitive signal: "BUY", "SELL", or "NO OPPORTUNITY". 
+         - signalReasoning: Exactly 3 concise bullet points. Use the RSI and SMA data in your reasoning.
+      6. technicalSummary: Exactly 3 concise bullet points summarizing the outlook based on both Math and News.
+      7. If BUY or SELL: Provide Entry, Target 1, Target 2, and Stop Loss. 
+         - Stop Loss should be strictly below support for BUY, or above resistance for SELL.
 
       IMPORTANT: 
       - Return ONLY a valid JSON object.
@@ -65,7 +75,7 @@ export const getAIIntelligenceReport = async (
             patterns: { 
               type: Type.ARRAY, 
               items: { type: Type.STRING },
-              description: "Patterns with dates in brackets, e.g. 'Pattern (Date)'"
+              description: "Patterns with dates in brackets."
             },
             technicalSummary: { 
               type: Type.ARRAY, 
@@ -99,7 +109,6 @@ export const getAIIntelligenceReport = async (
     try {
       const result = JSON.parse(text);
       
-      // Extract website URLs from grounding chunks as required by the Gemini API guidelines
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const newsSources = groundingChunks
         .filter((chunk: any) => chunk.web)
@@ -110,7 +119,8 @@ export const getAIIntelligenceReport = async (
 
       return {
         ...result,
-        newsSources
+        newsSources,
+        technicalData: techData // Include the math layer data in the result for the UI
       };
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
@@ -131,30 +141,24 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
   try {
     const ai = getAI();
     const dataContext = stocks.map(s => {
-      const history = s.history.slice(-30).map(p => 
-        `{T:${new Date(p.time * 1000).toISOString().split('T')[0]},C:${p.close},V:${p.volume}}`
-      ).join('|');
-      return `SYMBOL:${s.info.ticker} PRICE:${s.info.currentPrice} HISTORY:[${history}]`;
+      const tech = getTechnicalIndicators(s.history);
+      return `SYMBOL:${s.info.ticker} PRICE:${s.info.currentPrice} RSI:${tech.rsi} SMA50:${tech.sma50} SMA200:${tech.sma200}`;
     }).join('\n');
 
     const prompt = `
       Perform a High-Precision Multi-Stock Pulse Scan. 
-      Focus exclusively on identifying high-conviction "BUY" opportunities based on the most recent 10-day interval of price action and volume patterns.
+      Focus on identifying high-conviction "BUY" opportunities using the provided pre-calculated Technical Indicators.
 
-      STOCKS DATA:
+      STOCKS DATA (Math Layer Provided):
       ${dataContext}
 
-      ANALYSIS CRITERIA (10-Day Focus):
-      1. Identify Bullish Divergences or Breakouts occurring within the last 10 days.
-      2. Check for volume-supported support bounces.
-      3. ONLY include a stock in the response if it is a strong "BUY". If a stock is not a clear buy, exclude it from the final JSON array.
+      ANALYSIS CRITERIA:
+      1. Identify stocks where Price > SMA200 (Long term trend is UP).
+      2. Identify stocks where RSI is oversold (<40) or trending up from support.
+      3. ONLY include a stock if it is a strong "BUY".
       
       RULES:
-      - The 'signal' MUST always be "BUY". If you cannot justify a BUY, do not return that symbol.
-      - Calculate 'entry' as the current price or a slight pullback level.
-      - 'target1' must be a logical resistance level derived from the chart data.
-      - 'stopLoss' should be strictly placed 3-5% below entry to protect capital.
-      - Accuracy is paramount. Quality of signal over quantity.
+      - The 'signal' MUST always be "BUY".
       - Return ONLY a JSON array of objects.
     `;
 

@@ -1,10 +1,10 @@
+
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, X, TrendingUp, ShieldAlert, Target, Link as LinkIcon, BarChart3, Fingerprint, Newspaper, ChevronRight, LayoutDashboard, Info } from 'lucide-react';
+import { Sparkles, X, TrendingUp, ShieldAlert, Target, BarChart3, Newspaper, ChevronRight, LayoutDashboard, Info, Zap } from 'lucide-react';
 import { AIAnalysisResult, PricePoint } from '../types.ts';
 import { getAIIntelligenceReport } from '../services/aiService.ts';
 
-// Casting motion components to any to bypass IntrinsicAttributes type errors in the current environment
 const MotionDiv = motion.div as any;
 const MotionP = motion.p as any;
 
@@ -62,7 +62,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
             </div>
             <div className="min-w-0">
               <h2 className="text-sm font-black text-white uppercase tracking-widest truncate">AI Report</h2>
-              <span className="text-[8px] font-bold text-pink-400 uppercase tracking-[0.4em] block">{ticker}</span>
+              <span className="text-[10px] font-bold text-pink-400 uppercase tracking-[0.2em] block">{ticker.split('.')[0]}</span>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors border border-white/20">
@@ -117,8 +117,9 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                   transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                   className="text-[14px] font-black text-white uppercase tracking-[0.4em] leading-relaxed"
                 >
-                  Generating....
+                  Generating...
                 </MotionP>
+                <p className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">Initializing Gemini synthesis</p>
               </div>
             </div>
           ) : report ? (
@@ -175,10 +176,27 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                       </div>
                     </div>
 
+                    {/* Math Layer Overview */}
+                    {report.technicalData && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-1">
+                        {[
+                          { label: 'RSI', val: report.technicalData.rsi, color: report.technicalData.rsi > 70 ? 'text-rose-400' : report.technicalData.rsi < 30 ? 'text-emerald-400' : 'text-white' },
+                          { label: 'SMA 50', val: report.technicalData.sma50, color: 'text-cyan-400' },
+                          { label: 'SMA 200', val: report.technicalData.sma200, color: 'text-purple-400' },
+                          { label: 'EMA 20', val: report.technicalData.ema20, color: 'text-amber-400' }
+                        ].map((item, i) => (
+                          <div key={i} className="p-3 bg-white/[0.03] border border-white/20 rounded-xl flex flex-col items-center">
+                            <span className="text-[7px] font-black text-white/70 uppercase tracking-widest mb-1">{item.label}</span>
+                            <span className={`text-xs font-black tabular-nums ${item.color}`}>{item.val.toFixed(1)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="p-5 bg-white/[0.03] border border-white/30 rounded-2xl">
                       <div className="flex items-center gap-2 mb-4">
                         <Info size={14} className="text-pink-500" />
-                        <h3 className="text-[10px] font-black text-white uppercase tracking-widest">Rationale</h3>
+                        <h3 className="text-[10px] font-black text-white uppercase tracking-widest">Logic & Synthesis</h3>
                       </div>
                       <div className="space-y-3">
                         {Array.isArray(report.signalReasoning) ? (
@@ -192,27 +210,6 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                           ))
                         ) : (
                           <p className="text-[12px] text-white/80 font-medium">{report.signalReasoning}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="p-5 bg-white/[0.03] border border-white/30 rounded-2xl">
-                       <div className="flex items-center gap-2 mb-4">
-                          <Fingerprint size={14} className="text-cyan-400" />
-                          <h3 className="text-[10px] font-black text-white uppercase tracking-widest">Technical Brief</h3>
-                       </div>
-                       <div className="space-y-3">
-                        {Array.isArray(report.technicalSummary) ? (
-                          report.technicalSummary.map((item: string, i: number) => (
-                            <div key={i} className="flex gap-3">
-                              <ChevronRight size={14} className="text-cyan-400 shrink-0 mt-0.5" />
-                              <p className="text-[12px] text-white/90 leading-relaxed font-medium">
-                                {item}
-                              </p>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-[12px] text-white/80 font-medium">{report.technicalSummary}</p>
                         )}
                       </div>
                     </div>
@@ -248,30 +245,6 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                         <p className="text-[12px] text-white/70 italic px-2">{report.newsSummary}</p>
                       )}
                     </div>
-
-                    {/* Display Extracted News Sources from grounding metadata as required by API guidelines */}
-                    {report.newsSources && report.newsSources.length > 0 && (
-                      <div className="space-y-3 pt-4 border-t border-white/10">
-                        <div className="flex items-center gap-2 px-1">
-                          <LinkIcon size={14} className="text-cyan-400" />
-                          <h4 className="text-[10px] font-black text-white uppercase tracking-widest">Verified Sources</h4>
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {report.newsSources.map((source, i) => (
-                            <a 
-                              key={i} 
-                              href={source.uri} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="p-3 rounded-lg bg-white/5 border border-white/10 flex items-center justify-between hover:bg-white/10 transition-colors group"
-                            >
-                              <span className="text-[10px] text-white/70 group-hover:text-white truncate pr-4">{source.title}</span>
-                              <ChevronRight size={12} className="text-white/30 group-hover:text-white shrink-0" />
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -279,8 +252,21 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                   <div className="space-y-6">
                     <div className="flex items-center gap-3 border-b border-white/30 pb-4">
                       <Target size={18} className="text-cyan-400" />
-                      <h3 className="text-[12px] font-black text-white uppercase tracking-widest">Key Structural Levels</h3>
+                      <h3 className="text-[12px] font-black text-white uppercase tracking-widest">Structural Analysis</h3>
                     </div>
+
+                    {/* Local Math Support/Resistance */}
+                    {report.technicalData && (
+                      <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl flex items-center gap-4">
+                        <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 shrink-0">
+                          <Zap size={18} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Local Math Layer</span>
+                          <p className="text-[11px] text-white/80 font-medium leading-tight">Price is trading {currentPrice > report.technicalData.sma200 ? 'above' : 'below'} the 200-day SMA.</p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="overflow-hidden rounded-xl border border-white/40 bg-black/40">
                       <table className="w-full text-left border-collapse">

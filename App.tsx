@@ -207,13 +207,13 @@ const AlertModal: React.FC<{ ticker: string; currentPrice: number; onClose: () =
             />
             <button 
               onClick={() => setCondition('above')} 
-              className={`relative z-10 flex-1 py-2 text-[9px] font-black uppercase tracking-wider transition-colors ${condition === 'above' ? 'text-black' : 'text-white/60 hover:text-white'}`}
+              className={`relative z-10 flex-1 py-2 text-[9px] font-black uppercase tracking-wider transition-colors ${condition === 'above' ? 'text-black' : 'text-white/90 hover:text-white'}`}
             >
               Above
             </button>
             <button 
               onClick={() => setCondition('below')} 
-              className={`relative z-10 flex-1 py-2 text-[9px] font-black uppercase tracking-wider transition-colors ${condition === 'below' ? 'text-black' : 'text-white/60 hover:text-white'}`}
+              className={`relative z-10 flex-1 py-2 text-[9px] font-black uppercase tracking-wider transition-colors ${condition === 'below' ? 'text-black' : 'text-white/90 hover:text-white'}`}
             >
               Below
             </button>
@@ -935,7 +935,7 @@ const App: React.FC = () => {
                           <button onClick={() => alert.id && handleDeleteAlert(alert.id)} className="p-1 text-white/30 hover:text-rose-500 hover:bg-rose-500/5 transition-all"><Trash2 size={12} /></button>
                         </div>
                         <div className="bg-white/[0.02] border border-white/10 rounded-lg p-2 flex items-center justify-between">
-                          <span className="text-[7px] font-black text-white/40 uppercase tracking-widest">{alert.condition === 'above' ? 'Above' : 'Below'}</span>
+                          <span className="text-[7px] font-black text-white/80 uppercase tracking-widest">{alert.condition === 'above' ? 'Above' : 'Below'}</span>
                           <span className="text-[14px] font-black text-white tabular-nums tracking-tighter">{alert.target_price.toFixed(2)}</span>
                         </div>
                       </div>

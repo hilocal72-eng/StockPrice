@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { PricePoint, AIAnalysisResult, StockDetails, WatchlistStockAnalysis } from "../types.ts";
 
@@ -10,6 +9,9 @@ const getAI = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+/**
+ * Generates a detailed intelligence report using Gemini 3 Pro with Google Search grounding.
+ */
 export const getAIIntelligenceReport = async (
   ticker: string,
   currentPrice: number,
@@ -17,6 +19,7 @@ export const getAIIntelligenceReport = async (
 ): Promise<AIAnalysisResult | null> => {
   try {
     const ai = getAI();
+    // Prepare historical context for the model
     const historySnippet = history.slice(-50).map(p => 
       `T:${new Date(p.time * 1000).toISOString()} O:${p.open} H:${p.high} L:${p.low} C:${p.close} V:${p.volume}`
     ).join('\n');
@@ -93,23 +96,40 @@ export const getAIIntelligenceReport = async (
     const text = response.text;
     if (!text) return null;
 
-    const result = JSON.parse(text);
-    return {
-      ...result,
-      newsSources: [] // Removed per user request
-    };
+    try {
+      const result = JSON.parse(text);
+      
+      // Extract website URLs from grounding chunks as required by the Gemini API guidelines
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const newsSources = groundingChunks
+        .filter((chunk: any) => chunk.web)
+        .map((chunk: any) => ({
+          title: chunk.web.title || "Reference Source",
+          uri: chunk.web.uri
+        }));
+
+      return {
+        ...result,
+        newsSources
+      };
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", parseError);
+      return null;
+    }
   } catch (error) {
     console.error("AI Analysis Error:", error);
     return null;
   }
 };
 
+/**
+ * Scans the user's watchlist for high-conviction buy signals based on recent history.
+ */
 export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<WatchlistStockAnalysis[]> => {
   if (!stocks || stocks.length === 0) return [];
 
   try {
     const ai = getAI();
-    // Providing 30 days of context but emphasizing the 10-day analysis in the prompt
     const dataContext = stocks.map(s => {
       const history = s.history.slice(-30).map(p => 
         `{T:${new Date(p.time * 1000).toISOString().split('T')[0]},C:${p.close},V:${p.volume}}`
@@ -163,9 +183,13 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
 
     const text = response.text;
     if (!text) return [];
-    const parsed = JSON.parse(text);
-    // Extra safety filter to ensure only BUY signals are returned
-    return parsed.filter((item: WatchlistStockAnalysis) => item.signal === 'BUY');
+    
+    try {
+      const parsed = JSON.parse(text);
+      return parsed.filter((item: WatchlistStockAnalysis) => item.signal === 'BUY');
+    } catch (e) {
+      return [];
+    }
   } catch (error) {
     console.error("Watchlist Pulse Error:", error);
     return [];

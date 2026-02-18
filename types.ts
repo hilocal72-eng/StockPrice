@@ -95,3 +95,11 @@ export interface WatchlistStockAnalysis {
   target1: number;
   stopLoss: number;
 }
+
+export interface PortfolioItem {
+  id: string;
+  symbol: string;
+  quantity: number;
+  avgPrice: number;
+  currentPrice?: number;
+}

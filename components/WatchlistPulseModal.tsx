@@ -1,9 +1,12 @@
-
 import React, { useEffect, useState } from 'react';
+// Casting motion components to any to resolve IntrinsicAttributes error in this specific environment's React/Framer-Motion types
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, Loader2, ArrowUpRight, ArrowDownRight, Minus, AlertCircle, Search, Target } from 'lucide-react';
+import { X, Sparkles, Loader2, Search, Target } from 'lucide-react';
 import { StockDetails, WatchlistStockAnalysis } from '../types.ts';
 import { getWatchlistPulseReport } from '../services/aiService.ts';
+
+const MotionDiv = motion.div as any;
+const MotionTr = motion.tr as any;
 
 interface WatchlistPulseModalProps {
   stocks: StockDetails[];
@@ -26,7 +29,7 @@ const WatchlistPulseModal: React.FC<WatchlistPulseModalProps> = ({ stocks, onClo
 
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-      <motion.div 
+      <MotionDiv 
         initial={{ opacity: 0 }} 
         animate={{ opacity: 1 }} 
         exit={{ opacity: 0 }} 
@@ -34,7 +37,7 @@ const WatchlistPulseModal: React.FC<WatchlistPulseModalProps> = ({ stocks, onClo
         className="absolute inset-0 bg-black/90 backdrop-blur-xl" 
       />
       
-      <motion.div 
+      <MotionDiv 
         initial={{ scale: 0.95, opacity: 0, y: 20 }} 
         animate={{ scale: 1, opacity: 1, y: 0 }} 
         exit={{ scale: 0.95, opacity: 0, y: 20 }}
@@ -90,7 +93,7 @@ const WatchlistPulseModal: React.FC<WatchlistPulseModalProps> = ({ stocks, onClo
                   </thead>
                   <tbody className="divide-y divide-white/40">
                     {results.map((item, idx) => (
-                      <motion.tr 
+                      <MotionTr 
                         key={item.symbol}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -120,7 +123,7 @@ const WatchlistPulseModal: React.FC<WatchlistPulseModalProps> = ({ stocks, onClo
                             <span className="text-[7px] text-rose-500/60 font-black uppercase">Stop Loss</span>
                           </div>
                         </td>
-                      </motion.tr>
+                      </MotionTr>
                     ))}
                   </tbody>
                 </table>
@@ -149,7 +152,7 @@ const WatchlistPulseModal: React.FC<WatchlistPulseModalProps> = ({ stocks, onClo
             Acknowledge
           </button>
         </div>
-      </motion.div>
+      </MotionDiv>
     </div>
   );
 };

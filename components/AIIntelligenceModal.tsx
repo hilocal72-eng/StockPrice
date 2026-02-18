@@ -1,9 +1,12 @@
-
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, X, Globe, TrendingUp, ShieldAlert, Target, Link as LinkIcon, BarChart3, Fingerprint, Loader2, Newspaper, ChevronRight, LayoutDashboard, Info, Circle } from 'lucide-react';
-import { AIAnalysisResult, StockInfo, PricePoint } from '../types.ts';
+import { Sparkles, X, TrendingUp, ShieldAlert, Target, Link as LinkIcon, BarChart3, Fingerprint, Newspaper, ChevronRight, LayoutDashboard, Info } from 'lucide-react';
+import { AIAnalysisResult, PricePoint } from '../types.ts';
 import { getAIIntelligenceReport } from '../services/aiService.ts';
+
+// Casting motion components to any to bypass IntrinsicAttributes type errors in the current environment
+const MotionDiv = motion.div as any;
+const MotionP = motion.p as any;
 
 interface AIIntelligenceModalProps {
   ticker: string;
@@ -15,7 +18,7 @@ interface AIIntelligenceModalProps {
 type TabType = 'overview' | 'news' | 'technical';
 
 const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, currentPrice, history, onClose }) => {
-  const [report, setReport] = useState<any | null>(null);
+  const [report, setReport] = useState<AIAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
@@ -37,7 +40,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-2 sm:p-4 overflow-hidden">
-      <motion.div 
+      <MotionDiv 
         initial={{ opacity: 0 }} 
         animate={{ opacity: 1 }} 
         exit={{ opacity: 0 }} 
@@ -45,7 +48,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
         className="absolute inset-0 bg-black/95 backdrop-blur-3xl" 
       />
       
-      <motion.div 
+      <MotionDiv 
         initial={{ scale: 0.9, opacity: 0, y: 20 }} 
         animate={{ scale: 1, opacity: 1, y: 0 }} 
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -83,7 +86,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                   <Icon size={14} />
                   <span className="hidden xs:inline">{tab.label}</span>
                   {activeTab === tab.id && (
-                    <motion.div 
+                    <MotionDiv 
                       layoutId="activeTabUnderline"
                       className="absolute bottom-0 left-0 right-0 h-0.5 bg-pink-500 shadow-[0_0_10px_rgba(236,72,153,0.5)]" 
                     />
@@ -98,7 +101,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
           {loading ? (
             <div className="h-full flex flex-col items-center justify-center py-12 gap-8">
               <div className="relative">
-                <motion.div 
+                <MotionDiv 
                   animate={{ rotate: 360 }}
                   transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                   className="w-20 h-20 rounded-full border-t-4 border-r-4 border-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.4)]"
@@ -108,19 +111,19 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                 </div>
               </div>
               <div className="text-center space-y-3 px-4">
-                <motion.p 
+                <MotionP 
                   initial={{ opacity: 0.3 }}
                   animate={{ opacity: [0.3, 1, 0.3] }}
                   transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                   className="text-[14px] font-black text-white uppercase tracking-[0.4em] leading-relaxed"
                 >
                   Generating....
-                </motion.p>
+                </MotionP>
               </div>
             </div>
           ) : report ? (
             <AnimatePresence mode="wait">
-              <motion.div
+              <MotionDiv
                 key={activeTab}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -226,7 +229,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                     <div className="space-y-3">
                       {(report.newsBullets && report.newsBullets.length > 0) ? (
                         report.newsBullets.map((bullet: string, idx: number) => (
-                          <motion.div 
+                          <MotionDiv 
                             initial={{ x: -10, opacity: 0 }} 
                             animate={{ x: 0, opacity: 1 }} 
                             transition={{ delay: 0.1 * idx }}
@@ -239,12 +242,36 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                             <p className="text-[12px] text-white font-medium leading-relaxed">
                               {bullet}
                             </p>
-                          </motion.div>
+                          </MotionDiv>
                         ))
                       ) : (
                         <p className="text-[12px] text-white/70 italic px-2">{report.newsSummary}</p>
                       )}
                     </div>
+
+                    {/* Display Extracted News Sources from grounding metadata as required by API guidelines */}
+                    {report.newsSources && report.newsSources.length > 0 && (
+                      <div className="space-y-3 pt-4 border-t border-white/10">
+                        <div className="flex items-center gap-2 px-1">
+                          <LinkIcon size={14} className="text-cyan-400" />
+                          <h4 className="text-[10px] font-black text-white uppercase tracking-widest">Verified Sources</h4>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {report.newsSources.map((source, i) => (
+                            <a 
+                              key={i} 
+                              href={source.uri} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="p-3 rounded-lg bg-white/5 border border-white/10 flex items-center justify-between hover:bg-white/10 transition-colors group"
+                            >
+                              <span className="text-[10px] text-white/70 group-hover:text-white truncate pr-4">{source.title}</span>
+                              <ChevronRight size={12} className="text-white/30 group-hover:text-white shrink-0" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -303,7 +330,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
                     </div>
                   </div>
                 )}
-              </motion.div>
+              </MotionDiv>
             </AnimatePresence>
           ) : (
             <div className="h-full flex items-center justify-center py-20 px-6 text-center">
@@ -315,7 +342,7 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
             </div>
           )}
         </div>
-      </motion.div>
+      </MotionDiv>
     </div>
   );
 };

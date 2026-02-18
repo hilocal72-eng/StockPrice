@@ -1,16 +1,16 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
-import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert } from './types.ts';
+import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem } from './types.ts';
 import TerminalChart from './components/TerminalChart.tsx';
 import AIIntelligenceModal from './components/AIIntelligenceModal.tsx';
 import WatchlistPulseModal from './components/WatchlistPulseModal.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
 import { isPushSupported, getNotificationPermission, requestNotificationPermission, subscribeUser, unsubscribeUser, getPushSubscription } from './services/pushNotificationService.ts';
 
-type View = 'dashboard' | 'favorites' | 'alerts';
+type View = 'dashboard' | 'favorites' | 'alerts' | 'trade';
 type Timeframe = '15m' | '1D';
 type DrawingTool = 'horizontal' | 'trend' | null;
 type SentimentFilter = 'all' | 'bullish' | 'bearish';
@@ -34,6 +34,124 @@ const AnimatedMarketBackground: React.FC = () => {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(0,0,0,0)_0%,rgba(1,2,3,1)_90%)]" />
       <div className="absolute inset-0 bg-grid animate-grid opacity(10)" />
       <div className="absolute inset-0 scanlines opacity-[0.03]" />
+    </div>
+  );
+};
+
+const AddTradeModal: React.FC<{ onClose: () => void; onAdd: (item: Omit<PortfolioItem, 'id' | 'currentPrice'>) => void }> = ({ onClose, onAdd }) => {
+  const [ticker, setTicker] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [avgPrice, setAvgPrice] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (ticker.length > 0) {
+      const delayDebounceFn = setTimeout(async () => {
+        setIsSearching(true);
+        const res = await searchStocks(ticker);
+        // Prioritize .NS symbols and sort by match
+        const sorted = [...res].sort((a, b) => {
+          const aNS = a.symbol.toUpperCase().endsWith('.NS');
+          const bNS = b.symbol.toUpperCase().endsWith('.NS');
+          if (aNS && !bNS) return -1;
+          if (!aNS && bNS) return 1;
+          return 0;
+        });
+        setSearchResults(sorted);
+        setIsSearching(false);
+      }, 300);
+      return () => clearTimeout(delayDebounceFn);
+    } else {
+      setSearchResults([]);
+    }
+  }, [ticker]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (ticker && quantity && avgPrice) {
+      onAdd({
+        symbol: ticker.toUpperCase(),
+        quantity: parseFloat(quantity),
+        avgPrice: parseFloat(avgPrice)
+      });
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[450] flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative w-full max-w-sm glossy-card !border-white/40 rounded-3xl overflow-hidden p-5">
+        <div className="flex justify-between items-center mb-5">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-pink-600 rounded-lg text-white"><Plus size={14} strokeWidth={3} /></div>
+            <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Add Position</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-white/50 hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="relative">
+            <label className="text-[7px] font-black uppercase text-white/70 tracking-widest mb-1 block">Ticker</label>
+            <input 
+              type="text" 
+              placeholder="e.g. RELIANCE.NS" 
+              value={ticker} 
+              onChange={(e) => setTicker(e.target.value)}
+              className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all uppercase" 
+              required
+            />
+            {searchResults.length > 0 && (
+              <ul className="absolute z-10 w-full mt-1 bg-black/95 border border-white/20 rounded-lg max-h-32 overflow-y-auto custom-scrollbar shadow-2xl">
+                {searchResults.map(s => (
+                  <li 
+                    key={s.symbol} 
+                    onClick={() => { setTicker(s.symbol); setSearchResults([]); }}
+                    className="p-2 hover:bg-white/10 cursor-pointer border-b border-white/5 last:border-0"
+                  >
+                    <div className="flex justify-between items-center text-[9px] font-black text-white">
+                      <span>{s.symbol}</span>
+                      {s.symbol.toUpperCase().endsWith('.NS') && <span className="text-[6px] bg-pink-500/20 text-pink-500 px-1 rounded uppercase tracking-tighter">NSE</span>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Qty</label>
+              <input 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00" 
+                value={quantity} 
+                onChange={(e) => setQuantity(e.target.value)}
+                className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all tabular-nums" 
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Avg Price</label>
+              <input 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00" 
+                value={avgPrice} 
+                onChange={(e) => setAvgPrice(e.target.value)}
+                className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all tabular-nums" 
+                required
+              />
+            </div>
+          </div>
+
+          <button type="submit" className="w-full bg-pink-600 hover:bg-pink-500 text-white py-2.5 rounded-lg text-[8px] font-black uppercase tracking-[0.2em] shadow-lg shadow-pink-600/10 transition-all active:scale-95 border border-white/10 mt-2">
+            Confirm Entry
+          </button>
+        </form>
+      </motion.div>
     </div>
   );
 };
@@ -217,6 +335,11 @@ const App: React.FC = () => {
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [clearLinesSignal, setClearLinesSignal] = useState(0);
 
+  // Trade / Portfolio logic
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [isAddTradeModalOpen, setIsAddTradeModalOpen] = useState(false);
+  const [isPortfolioLoading, setIsPortfolioLoading] = useState(false);
+
   // Alerts logic
   const [userAlerts, setUserAlerts] = useState<Alert[]>([]);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
@@ -279,14 +402,21 @@ const App: React.FC = () => {
     }
   }, [stockData, handleFetchData]);
 
-  // Check if browser is iOS and NOT in standalone mode
+  const toggleFavorite = useCallback((ticker: string) => {
+    setFavorites(prev => {
+      const isFav = prev.includes(ticker);
+      const next = isFav ? prev.filter(f => f !== ticker) : [...prev, ticker];
+      localStorage.setItem('stkr_favs_v2', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const isIosAndNotStandalone = useMemo(() => {
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     const isStandalone = (window.navigator as any).standalone === true;
     return isIos && !isStandalone;
   }, []);
 
-  // Sync alerts status from DB
   const refreshAlerts = useCallback(async () => {
     try {
       const alerts = await fetchUserAlerts();
@@ -296,7 +426,53 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Auto-polling for status updates every 20 seconds
+  const handleAddPortfolioItem = (item: Omit<PortfolioItem, 'id' | 'currentPrice'>) => {
+    const newItem: PortfolioItem = {
+      ...item,
+      id: Date.now().toString(),
+    };
+    const newPortfolio = [...portfolio, newItem];
+    setPortfolio(newPortfolio);
+    localStorage.setItem('stkr_portfolio_v1', JSON.stringify(newPortfolio));
+    refreshPortfolioPrices(newPortfolio);
+  };
+
+  const handleRemovePortfolioItem = (id: string) => {
+    const newPortfolio = portfolio.filter(p => p.id !== id);
+    setPortfolio(newPortfolio);
+    localStorage.setItem('stkr_portfolio_v1', JSON.stringify(newPortfolio));
+  };
+
+  const refreshPortfolioPrices = useCallback(async (currentPortfolio: PortfolioItem[]) => {
+    if (currentPortfolio.length === 0) return;
+    setIsPortfolioLoading(true);
+    try {
+      const updated = await Promise.all(currentPortfolio.map(async (p) => {
+        const data = await fetchStockData(p.symbol, '1d', '1d');
+        return { ...p, currentPrice: data?.info.currentPrice };
+      }));
+      setPortfolio(updated);
+    } catch (e) {
+      console.error("Portfolio refresh failed:", e);
+    } finally {
+      setIsPortfolioLoading(false);
+    }
+  }, []);
+
+  const portfolioStats = useMemo(() => {
+    let totalInvested = 0;
+    let totalCurrentValue = 0;
+    portfolio.forEach(item => {
+      totalInvested += item.quantity * item.avgPrice;
+      totalCurrentValue += item.quantity * (item.currentPrice || item.avgPrice);
+    });
+    return {
+      totalInvested,
+      totalPL: totalCurrentValue - totalInvested,
+      totalPLPercent: totalInvested !== 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0
+    };
+  }, [portfolio]);
+
   useEffect(() => {
     const hasActive = userAlerts.some(a => a.status === 'active');
     if (!hasActive && activeView !== 'alerts') return;
@@ -304,7 +480,6 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [userAlerts, activeView, refreshAlerts]);
 
-  // Robust Subscription Logic
   const handleEnsureSubscription = async () => {
     if (!isPushSupported()) {
       setError("Push Manager is not supported on this device/browser.");
@@ -345,16 +520,13 @@ const App: React.FC = () => {
     }
   };
 
-  // Alert Actions
   const handleSaveAlert = async (price: number, condition: 'above' | 'below'): Promise<boolean> => {
     if (!stockData) return false;
     
     setError(null);
     try {
-      // Proactively ensure subscription is active BEFORE saving alert
       const subSuccess = await handleEnsureSubscription();
       if (!subSuccess && !isPushSubscribed) {
-        // We still allow saving the alert but warn the user
         console.warn("Saving alert without an active push subscription.");
       }
 
@@ -402,6 +574,14 @@ const App: React.FC = () => {
   useEffect(() => {
     const storedFavs = localStorage.getItem('stkr_favs_v2');
     if (storedFavs) setFavorites(JSON.parse(storedFavs));
+    
+    const storedPortfolio = localStorage.getItem('stkr_portfolio_v1');
+    if (storedPortfolio) {
+      const parsed = JSON.parse(storedPortfolio);
+      setPortfolio(parsed);
+      refreshPortfolioPrices(parsed);
+    }
+
     getAnonymousId();
     refreshAlerts();
     
@@ -410,7 +590,6 @@ const App: React.FC = () => {
       setPushStatus(perm);
       getPushSubscription().then(sub => {
         setIsPushSubscribed(!!sub);
-        // If granted but no subscription record in browser, try to fix it automatically
         if (perm === 'granted' && !sub && !isIosAndNotStandalone) {
           subscribeUser().then(success => setIsPushSubscribed(success));
         }
@@ -419,23 +598,6 @@ const App: React.FC = () => {
 
     handleSelectAndSearch('AAPL');
   }, [handleSelectAndSearch, isIosAndNotStandalone, refreshAlerts]);
-
-  // Prompt for permissions if the user visits the alerts tab and status is 'default'
-  useEffect(() => {
-    if (activeView === 'alerts' && pushStatus === 'default' && !isPushLoading && !isIosAndNotStandalone) {
-      // Small delay to let the UI settle
-      const timer = setTimeout(() => {
-        handleEnsureSubscription();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [activeView, isIosAndNotStandalone]);
-
-  const toggleFavorite = (ticker: string) => {
-    const newFavs = favorites.includes(ticker) ? favorites.filter(f => f !== ticker) : [...favorites, ticker];
-    setFavorites(newFavs);
-    localStorage.setItem('stkr_favs_v2', JSON.stringify(newFavs));
-  };
 
   useEffect(() => {
     if (activeView === 'favorites') {
@@ -448,6 +610,9 @@ const App: React.FC = () => {
       } else {
         setFavoriteStocksDetails([]);
       }
+    }
+    if (activeView === 'trade') {
+      refreshPortfolioPrices(portfolio);
     }
   }, [activeView, favorites]);
 
@@ -463,6 +628,7 @@ const App: React.FC = () => {
       <AnimatePresence>
         {selectedSentiment && <SentimentDetailModal ticker={selectedSentiment.ticker} analysis={selectedSentiment.analysis} onClose={() => setSelectedSentiment(null)} />}
         {isAlertModalOpen && stockData && <AlertModal ticker={stockData.info.ticker} currentPrice={stockData.info.currentPrice} onClose={() => setIsAlertModalOpen(false)} onSave={handleSaveAlert} />}
+        {isAddTradeModalOpen && <AddTradeModal onClose={() => setIsAddTradeModalOpen(false)} onAdd={handleAddPortfolioItem} />}
         {isAIModalOpen && stockData && (
           <AIIntelligenceModal 
             ticker={stockData.info.ticker} 
@@ -504,14 +670,15 @@ const App: React.FC = () => {
         <div className="p-4 flex justify-center"><div className="bg-pink-600 w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-xl border border-white/40"><TrendingUp size={20} strokeWidth={4} /></div></div>
         <nav className="flex-1 px-2 space-y-4 mt-6">
           <button onClick={() => setActiveView('dashboard')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'dashboard' ? 'bg-white/15 text-white border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><LayoutDashboard size={20} /></button>
+          <button onClick={() => setActiveView('trade')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'trade' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Briefcase size={20} /></button>
           <button onClick={() => setActiveView('favorites')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'favorites' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Heart size={20} /></button>
           <button onClick={() => setActiveView('alerts')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'alerts' ? 'bg-white/15 text-yellow-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><BellRing size={20} /></button>
         </nav>
       </aside>
 
-      <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-32 md:pb-6 p-4 md:p-6 relative z-10 bg-black/10">
-        <div className="max-w-6xl mx-auto space-y-3">
-          <header className="flex flex-col sm:flex-row items-center justify-between gap-3">
+      <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-32 md:pb-6 p-3 md:p-6 relative z-10 bg-black/10">
+        <div className="max-w-6xl mx-auto space-y-2.5">
+          <header className="flex flex-col sm:flex-row items-center justify-between gap-2.5">
             {activeView === 'dashboard' && (
               <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-1">
                   <motion.div
@@ -519,17 +686,13 @@ const App: React.FC = () => {
                     transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                     className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.8)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-60"
                   />
-                  <div className="relative flex items-center gap-3 px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10">
+                  <div className="relative flex items-center gap-4 px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10">
                     <div className="p-2 rounded-lg bg-pink-600 text-white shadow-[0_0_15px_rgba(236,72,153,0.4)] border border-white/20">
                        <TrendingUp size={16} strokeWidth={4} />
                     </div>
                     <div className="flex flex-col">
                        <h1 className="text-sm font-black text-white uppercase tracking-[0.3em] leading-tight">Stocker</h1>
-                       <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.4em]">Professional Analytics</span>
-                    </div>
-                    <div className="ml-auto flex items-center gap-4 text-white/30 text-[8px] font-black uppercase tracking-wider">
-                       <div className="hidden sm:flex items-center gap-2"><ShieldCheck size={12} className="text-emerald-500/60" /><span></span></div>
-                       <div className="flex items-center gap-2"><Activity size={12} className="text-pink-500/60" /><span></span></div>
+                       <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.4em]">Professional Analytics</span>
                     </div>
                   </div>
               </div>
@@ -537,291 +700,258 @@ const App: React.FC = () => {
             {activeView === 'dashboard' && (
               <div className="w-full max-sm relative group" onFocus={() => setIsSearchFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsSearchFocused(false); }}>
                 <form className="relative" onSubmit={(e) => { e.preventDefault(); handleSelectAndSearch(searchResults.length > 0 ? searchResults[0].symbol : searchTerm); }}>
-                  <input type="text" placeholder="Search by name or symbol..." className="w-full bg-white/[0.08] border border-white/40 rounded-xl py-3 pl-5 pr-12 text-[12px] font-bold text-white placeholder-white/30 focus:outline-none focus:border-pink-500/80 transition-all shadow-inner" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                  <input type="text" placeholder="Search symbol..." className="w-full bg-white/[0.08] border border-white/40 rounded-xl py-3 pl-5 pr-12 text-[12px] font-bold text-white placeholder-white/30 focus:outline-none focus:border-pink-500/80 transition-all shadow-inner" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                   <button type="submit" className="absolute inset-y-0 right-0 flex items-center pr-4 text-white/80 hover:text-pink-500 transition-colors duration-200"><motion.div animate={{ y: [0, -2, 0], scale: [1, 1.1, 1] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}><TrendingUp size={16} strokeWidth={3} /></motion.div></button>
                 </form>
-                <AnimatePresence>{isSearchFocused && searchResults.length > 0 && (<motion.ul initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-full mt-2 w-full glossy-card !border-white/40 rounded-xl overflow-hidden z-50 p-1">{searchResults.map((result) => (<li key={result.symbol} onMouseDown={() => handleSelectAndSearch(result.symbol)} className="p-3 hover:bg-white/10 rounded-lg cursor-pointer transition-colors"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white uppercase">{result.symbol}</span><span className="text-[9px] font-bold text-white/40 px-2 py-0.5 bg-white/5 rounded">{result.exchange}</span></div><p className="text-[10px] text-white/60 mt-1 truncate">{result.name}</p></li>))}</motion.ul>)}</AnimatePresence>
+                <AnimatePresence>{isSearchFocused && searchResults.length > 0 && (<motion.ul initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-full mt-2 w-full glossy-card !border-white/40 rounded-xl overflow-hidden z-50 p-1">{searchResults.map((result) => (<li key={result.symbol} onMouseDown={() => handleSelectAndSearch(result.symbol)} className="p-3 hover:bg-white/10 rounded-lg cursor-pointer transition-colors"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white uppercase">{result.symbol}</span><span className="text-[9px] font-bold text-white/50 px-2 py-0.5 bg-white/5 rounded">{result.exchange}</span></div><p className="text-[10px] text-white/70 mt-1 truncate">{result.name}</p></li>))}</motion.ul>)}</AnimatePresence>
               </div>
             )}
           </header>
 
-          {error && (<div className="px-4 py-3 border-2 border-rose-500/60 bg-rose-500/15 text-rose-400 text-[11px] font-black rounded-xl flex justify-between items-center animate-in slide-in-from-top-2 duration-300"><div className="flex items-center gap-2"><Info size={14} /><span>{error}</span></div><button onClick={() => setError(null)} className="p-1 hover:bg-rose-500/20 rounded-lg"><X size={16} /></button></div>)}
+          {error && (<div className="px-3 py-2 border border-rose-500/40 bg-rose-500/10 text-rose-400 text-[10px] font-black rounded-lg flex justify-between items-center animate-in slide-in-from-top-2 duration-300"><div className="flex items-center gap-2"><Info size={12} /><span>{error}</span></div><button onClick={() => setError(null)} className="p-1 hover:bg-rose-500/20 rounded-md"><X size={14} /></button></div>)}
 
           {loading ? (
-            <div className="py-32 flex flex-col items-center gap-6"><div className="relative"><Loader2 className="animate-spin text-pink-500" size={48} strokeWidth={4} /><div className="absolute inset-0 blur-xl bg-pink-500/20 animate-pulse" /></div><span className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em] animate-pulse">Synchronizing Market Data</span></div>
+            <div className="py-24 flex flex-col items-center gap-4"><div className="relative"><Loader2 className="animate-spin text-pink-500" size={32} strokeWidth={4} /><div className="absolute inset-0 blur-lg bg-pink-500/20 animate-pulse" /></div><span className="text-[9px] font-black text-white/50 uppercase tracking-[0.2em] animate-pulse">Syncing Market Engine</span></div>
           ) : stockData && activeView === 'dashboard' ? (
-            <div className="space-y-6 animate-in fade-in duration-500">
-              <section className="glossy-card !border-white/50 p-5 md:p-8 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-pink-600/10 blur-[100px] pointer-events-none" />
-                <div className="space-y-3 relative z-10 w-full md:w-auto">
-                  <div className="flex items-center justify-between md:justify-start gap-3">
-                    <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter uppercase leading-none">{stockData.info.ticker.split('.')[0]}</h2>
-                    <div className="flex items-center gap-1.5">
-                      <button onClick={() => toggleFavorite(stockData.info.ticker)} className={`p-2.5 rounded-xl border-2 transition-all ${favorites.includes(stockData.info.ticker) ? 'bg-pink-600 border-pink-400 text-white shadow-lg' : 'border-white/40 text-white/40 hover:text-white'}`}><Heart size={10} fill={favorites.includes(stockData.info.ticker) ? "currentColor" : "none"} strokeWidth={3} /></button>
-                      <button onClick={() => setIsAlertModalOpen(true)} className={`p-2.5 rounded-xl border-2 transition-all ${activeAlertForCurrent ? 'bg-yellow-500 border-yellow-300 text-black shadow-lg' : 'border-white/40 text-white/40 hover:text-white'}`}>{activeAlertForCurrent ? <BellRing size={10} strokeWidth={3} className="animate-pulse" /> : <BellRing size={10} strokeWidth={3} />}</button>
+            <div className="space-y-4 animate-in fade-in duration-500">
+              <section className="glossy-card !border-white/40 p-4 md:p-6 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-48 h-48 bg-pink-600/5 blur-[80px] pointer-events-none" />
+                <div className="space-y-2 relative z-10 w-full md:w-auto">
+                  <div className="flex items-center justify-between md:justify-start gap-2.5">
+                    <h2 className="text-3xl md:text-4xl font-black text-white tracking-tighter uppercase leading-none">{stockData.info.ticker.split('.')[0]}</h2>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => toggleFavorite(stockData.info.ticker)} className={`p-2 rounded-lg border-2 transition-all ${favorites.includes(stockData.info.ticker) ? 'bg-pink-600 border-pink-400 text-white shadow-lg' : 'border-white/20 text-white/50 hover:text-white'}`}><Heart size={10} fill={favorites.includes(stockData.info.ticker) ? "currentColor" : "none"} strokeWidth={3} /></button>
+                      <button onClick={() => setIsAlertModalOpen(true)} className={`p-2 rounded-lg border-2 transition-all ${activeAlertForCurrent ? 'bg-yellow-500 border-yellow-300 text-black shadow-lg' : 'border-white/20 text-white/50 hover:text-white'}`}>{activeAlertForCurrent ? <BellRing size={10} strokeWidth={3} className="animate-pulse" /> : <BellRing size={10} strokeWidth={3} />}</button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3"><div className="w-10 h-[2px] bg-pink-600 rounded-full" /><p className="text-[10px] text-white/70 font-black uppercase tracking-[0.2em] italic truncate max-w-[200px] md:max-w-none">{stockData.info.name}</p></div>
+                  <div className="flex items-center gap-2"><div className="w-6 h-[1.5px] bg-pink-600 rounded-full" /><p className="text-[9px] text-white/70 font-black uppercase tracking-[0.15em] italic truncate max-w-[150px] md:max-w-none">{stockData.info.name}</p></div>
                 </div>
-                <div className="flex flex-col items-start md:items-end gap-4 relative z-10 w-full md:w-auto">
-                   <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto">
-                      <span className="text-4xl md:text-5xl font-black text-white tabular-nums tracking-tighter leading-none">{stockData.info.currentPrice.toFixed(2)}</span>
-                      <div className="flex flex-col items-center gap-2">
-                        <SentimentIndicator analysis={stockData.info.sentiment} onClick={() => setSelectedSentiment({ ticker: stockData.info.ticker.split('.')[0], analysis: stockData.info.sentiment })} />
+                <div className="flex flex-col items-start md:items-end gap-3 relative z-10 w-full md:w-auto">
+                   <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto">
+                      <span className="text-3xl md:text-4xl font-black text-white tabular-nums tracking-tighter leading-none">{stockData.info.currentPrice.toFixed(2)}</span>
+                      <div className="flex flex-col items-center gap-1.5">
+                        <SentimentIndicator analysis={stockData.info.sentiment} size="sm" onClick={() => setSelectedSentiment({ ticker: stockData.info.ticker.split('.')[0], analysis: stockData.info.sentiment })} />
                         <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
                           onClick={() => setIsAIModalOpen(true)}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-600 to-cyan-500 text-white border border-white/40 shadow-lg shadow-pink-500/20"
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-pink-600 to-cyan-500 text-white border border-white/30 shadow-md shadow-pink-500/10"
                         >
-                          <Sparkles size={12} fill="white" className="animate-pulse" />
-                          <span className="text-[8px] font-black uppercase tracking-widest">AI Analyst</span>
+                          <Sparkles size={10} fill="white" className="animate-pulse" />
+                          <span className="text-[7px] font-black uppercase tracking-widest">Analyst</span>
                         </motion.button>
                       </div>
                    </div>
-                   <div className={`text-[12px] font-black tabular-nums px-4 py-1.5 rounded-xl border-2 self-start md:self-auto ${stockData.info.change >= 0 ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/15' : 'text-rose-500 border-rose-500/40 bg-rose-500/15'}`}>{stockData.info.change >= 0 ? <ArrowUpRight size={14} className="inline mr-1" /> : <ArrowDownRight size={14} className="inline mr-1" />}{Math.abs(stockData.info.change).toFixed(2)} ({stockData.info.changePercent.toFixed(2)}%)</div>
+                   <div className={`text-[10px] font-black tabular-nums px-3 py-1 rounded-lg border-2 self-start md:self-auto ${stockData.info.change >= 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-rose-500 border-rose-500/30 bg-rose-500/10'}`}>{stockData.info.change >= 0 ? '+' : ''}{Math.abs(stockData.info.change).toFixed(2)} ({stockData.info.changePercent.toFixed(2)}%)</div>
                 </div>
               </section>
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                <div className="lg:col-span-3 h-[450px] w-full glossy-card !border-white/50 p-1 rounded-2xl relative group shadow-2xl bg-black/30 overflow-hidden">{dailyHistory && <TerminalChart ticker={stockData.info.ticker} data={dailyHistory.slice(-20)} isModal={false} />}<button onClick={() => setIsChartModalOpen(true)} className="absolute top-4 right-4 z-10 p-3 bg-black/50 rounded-full border border-white/20 backdrop-blur-lg text-white/70 hover:text-white hover:bg-pink-600 transition-all opacity-0 group-hover:opacity-100"><Expand size={16} /></button></div>
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+                <div className="lg:col-span-3 h-[380px] w-full glossy-card !border-white/40 p-0.5 rounded-xl relative group shadow-xl bg-black/20 overflow-hidden">{dailyHistory && <TerminalChart ticker={stockData.info.ticker} data={dailyHistory.slice(-20)} isModal={false} />}<button onClick={() => setIsChartModalOpen(true)} className="absolute top-3 right-3 z-10 p-2.5 bg-black/60 rounded-lg border border-white/10 backdrop-blur-md text-white/60 hover:text-white hover:bg-pink-600 transition-all opacity-0 group-hover:opacity-100"><Expand size={14} /></button></div>
                 <div className="lg:col-span-1"><PriceActionTable data={stockData.dailyAction} /></div>
               </div>
             </div>
-          ) : activeView === 'favorites' ? (
+          ) : activeView === 'trade' ? (
             <div className="space-y-4 animate-in fade-in duration-500">
-               <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-4">
+               <div className="flex justify-between items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-pink-600/20 text-pink-500 rounded-lg border border-pink-500/30 shadow-[0_0_15px_rgba(236,72,153,0.2)]"><Briefcase size={16} strokeWidth={3} /></div>
+                    <div className="flex flex-col">
+                      <h2 className="text-[11px] font-black text-white uppercase tracking-widest leading-none">PORTFOLIO</h2>
+                      <span className="text-[7px] font-bold text-white/50 uppercase tracking-[0.2em] mt-0.5">Real-time valuation</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setIsAddTradeModalOpen(true)} className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1.5 active:scale-95">
+                    <Plus size={12} strokeWidth={3} />
+                    ADD POISTION
+                  </button>
+               </div>
+
+               <div className="grid grid-cols-2 gap-3">
+                  <div className="glossy-card !border-white/30 p-3.5 rounded-xl flex flex-col gap-0.5 shadow-lg relative overflow-hidden group border-white/10">
+                    <span className="text-[7px] font-black text-white/60 uppercase tracking-widest">Invested Value</span>
+                    <div className="text-[16px] font-black text-white tabular-nums tracking-tighter">
+                      {portfolioStats.totalInvested.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className={`glossy-card !border-white/30 p-3.5 rounded-xl flex flex-col gap-0.5 shadow-lg relative overflow-hidden group ${portfolioStats.totalPL >= 0 ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[7px] font-black text-white/60 uppercase tracking-widest">Total P/L</span>
+                      <span className={`text-[7px] font-black px-1 rounded-sm border ${portfolioStats.totalPL >= 0 ? 'text-emerald-400 border-emerald-400/40' : 'text-rose-400 border-rose-400/40'}`}>
+                        {portfolioStats.totalPL >= 0 ? '+' : ''}{portfolioStats.totalPLPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className={`text-[16px] font-black tabular-nums tracking-tighter ${portfolioStats.totalPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {portfolioStats.totalPL >= 0 ? '+' : '-'}{Math.abs(portfolioStats.totalPL).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+               </div>
+
+               <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40">
+                  <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
+                    <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">HOLDINGS</h3>
+                    {isPortfolioLoading && <Loader2 size={10} className="animate-spin text-pink-500" />}
+                  </div>
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-collapse min-w-[420px]">
+                      <thead>
+                        <tr className="bg-white/[0.02] border-b border-white/20">
+                          <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
+                          <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Quantity</th>
+                          <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Avg Cost</th>
+                          <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Mkt Price</th>
+                          <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">P/L</th>
+                          <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Manage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/10">
+                        {portfolio.map(item => {
+                          const pl = item.currentPrice ? (item.currentPrice - item.avgPrice) * item.quantity : 0;
+                          const plPerc = (pl / (item.avgPrice * item.quantity)) * 100;
+                          return (
+                            <tr key={item.id} className="hover:bg-white/[0.04] transition-colors group">
+                              <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.symbol)}>
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.symbol}</span>
+                                
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
+                              <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.avgPrice.toFixed(2)}</td>
+                              <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.currentPrice?.toFixed(2) || '---'}</td>
+                              <td className="px-2 py-3 text-right border-r border-white/10">
+                                <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
+                                  <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <button onClick={() => handleRemovePortfolioItem(item.id)} className="p-1.5 rounded-md text-white/30 hover:text-rose-500 hover:bg-rose-500/10 transition-all border border-transparent hover:border-rose-500/20">
+                                  <Trash2 size={12} strokeWidth={2.5} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {portfolio.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="py-16 text-center">
+                              <div className="flex flex-col items-center gap-2">
+                                <Activity size={24} className="text-white/20" />
+                                <span className="text-[8px] font-black text-white/50 uppercase tracking-widest">No active positions tracked</span>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+               </div>
+            </div>
+          ) : activeView === 'favorites' ? (
+            <div className="space-y-3.5 animate-in fade-in duration-500">
+               <div className="relative p-[1px] rounded-xl overflow-hidden w-full mb-3">
                   <motion.div
                     animate={{ rotate: 360 }}
                     transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                     className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.6)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-40"
                   />
                   <div className="relative flex items-center gap-3 px-3 py-2 bg-black/80 backdrop-blur-xl rounded-[calc(0.75rem-1px)] border border-white/5">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-pink-500/20 to-transparent border border-pink-500/40 text-pink-500 shadow-[0_0_12px_rgba(236,72,153,0.15)]">
-                       <Heart size={14} strokeWidth={2.5} />
+                    <div className="p-2 rounded-lg bg-pink-500/10 text-pink-500 shadow-sm border border-pink-500/20">
+                       <Heart size={12} strokeWidth={3} />
                     </div>
                     <div className="flex flex-col">
-                       <h2 className="text-[10px] font-black text-white uppercase tracking-[0.25em] leading-tight">Watchlist</h2>
-                       <span className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Monitored Assets</span>
+                       <h2 className="text-[9px] font-black text-white uppercase tracking-[0.2em] leading-tight">Watchlist</h2>
+                       <span className="text-[6px] font-bold text-white/50 uppercase tracking-widest mt-0.5">Market Monitors</span>
                     </div>
-                    <div className="ml-auto flex items-center gap-3">
+                    <div className="ml-auto flex items-center gap-2">
                        <motion.button
                          whileHover={{ scale: 1.05 }}
                          whileTap={{ scale: 0.95 }}
                          onClick={() => setIsPulseModalOpen(true)}
                          disabled={favorites.length === 0}
-                         className={`flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-cyan-500 text-white border border-white/40 shadow-lg shadow-pink-500/20 ${favorites.length === 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-600 to-cyan-500 text-white border border-white/20 shadow-md ${favorites.length === 0 ? 'opacity-40' : ''}`}
                        >
-                         <Wand2 size={12} fill="white" className="animate-pulse" />
-                         <span className="text-[9px] font-black uppercase tracking-widest hidden sm:inline">AI Pulse Check</span>
-                         <span className="text-[9px] font-black uppercase tracking-widest sm:hidden">Pulse</span>
+                         <Wand2 size={10} fill="white" className="animate-pulse" />
+                         <span className="text-[7px] font-black uppercase tracking-widest">Pulse Scan</span>
                        </motion.button>
-                       <div className="hidden sm:flex items-center gap-1.5 opacity-30">
-                          <div className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse" />
-                          <span className="text-[7px] font-black text-white uppercase tracking-widest">{favorites.length} Symbols</span>
-                       </div>
                     </div>
                   </div>
                </div>
 
-               <div className="flex items-center p-0.5 bg-white/[0.03] border border-white/30 rounded-xl max-w-2xl">
-                  <div className="relative flex-1 group min-w-0 opacity-80"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-pink-500 transition-colors" size={12} /><input type="text" placeholder="Filter favorites..." className="w-full bg-transparent py-2.5 pl-10 pr-4 text-[11px] font-black uppercase tracking-wider text-white placeholder-white/20 focus:outline-none transition-all" value={favSearchTerm} onChange={(e) => setFavSearchTerm(e.target.value)} /></div>
-                  <div className="w-[1px] h-4 bg-white/20 mx-1" />
-                  <div className="flex items-center gap-0.5 shrink-0 opacity-80">{(['all', 'bullish', 'bearish'] as const).map((mode) => (<button key={mode} onClick={() => setFavFilter(mode)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${favFilter === mode ? 'bg-white/20 text-white shadow-lg border border-white/40' : 'text-white/40 hover:text-white/60'}`}>{mode === 'bullish' && <Flame size={10} className={favFilter === 'bullish' ? 'text-emerald-400' : ''} />}{mode === 'bearish' && <Snowflake size={10} className={favFilter === 'bearish' ? 'text-rose-500' : ''} />}<span className="hidden sm:inline">{mode}</span>{mode === 'all' && <span className="sm:hidden">All</span>}</button>))}</div>
+               <div className="flex items-center p-0.5 bg-white/[0.02] border border-white/20 rounded-xl max-w-2xl">
+                  <div className="relative flex-1 group min-w-0"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-pink-500" size={10} /><input type="text" placeholder="Filter favorites..." className="w-full bg-transparent py-2 pl-8 pr-3 text-[9px] font-black uppercase tracking-wider text-white placeholder-white/20 focus:outline-none" value={favSearchTerm} onChange={(e) => setFavSearchTerm(e.target.value)} /></div>
+                  <div className="w-[1px] h-3 bg-white/10 mx-1" />
+                  <div className="flex items-center gap-0.5 shrink-0">{(['all', 'bullish', 'bearish'] as const).map((mode) => (<button key={mode} onClick={() => setFavFilter(mode)} className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${favFilter === mode ? 'bg-white/10 text-white border border-white/20' : 'text-white/40 hover:text-white/60'}`}>{mode === 'bullish' && <Flame size={8} />}{mode === 'bearish' && <Snowflake size={8} />}<span>{mode}</span></button>))}</div>
                </div>
-               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                  {filteredFavorites.map((fav) => (<div key={fav.info.ticker} className="relative p-4 rounded-xl overflow-hidden transition-all cursor-pointer group shadow-xl active:scale-[0.98] border border-white/30 bg-gradient-to-br from-white/[0.12] via-white/[0.04] to-transparent backdrop-blur-md" onClick={() => handleSelectAndSearch(fav.info.ticker)}><div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/[0.08] to-transparent pointer-events-none" /><div className="relative z-10 flex flex-col gap-0.5 opacity-95"><div className="flex items-center justify-between gap-2 min-w-0"><h3 className="text-[15px] font-black text-white group-hover:text-pink-500 transition-colors uppercase tracking-tight truncate shrink">{fav.info.ticker.split('.')[0]}</h3><div className="shrink-0"><SentimentIndicator analysis={fav.info.sentiment} size="sm" onClick={() => setSelectedSentiment({ ticker: fav.info.ticker.split('.')[0], analysis: fav.info.sentiment })} /></div></div><div className="min-w-0"><p className="text-[9px] text-white/40 font-black uppercase tracking-widest truncate">{fav.info.name}</p></div><div className="relative flex items-center justify-between gap-2 border-t border-white/10 pt-2.5 mt-2"><span className="text-base font-black text-white tabular-nums tracking-tighter shrink-0">{fav.info.currentPrice.toFixed(2)}</span><div className={`text-[9px] font-black px-1.5 py-0.5 rounded border shrink-0 ${fav.info.change >= 0 ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10' : 'text-rose-500 border-rose-500/40 bg-rose-500/10'}`}>{fav.info.changePercent.toFixed(1)}%</div></div></div></div>))}
-                  {favorites.length === 0 && (<div className="col-span-full py-16 text-center glossy-card !border-white/30 rounded-2xl flex flex-col items-center gap-4"><Heart size={40} className="text-white/10" strokeWidth={1} /><div className="space-y-1"><span className="block text-[12px] font-black text-white/50 uppercase tracking-[0.2em]">Watchlist Empty</span><p className="text-[10px] text-white/30 max-w-[200px]">Add stocks from the dashboard to track them here.</p></div><button onClick={() => setActiveView('dashboard')} className="px-8 py-3 bg-pink-600 rounded-lg text-[10px] font-black uppercase tracking-widest border border-white/30 shadow-lg hover:bg-pink-500 transition-colors">Find Stocks</button></div>)}
+               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                  {filteredFavorites.map((fav) => (<div key={fav.info.ticker} className="relative p-3 rounded-xl overflow-hidden transition-all cursor-pointer group shadow-lg active:scale-[0.98] border border-white/20 bg-gradient-to-br from-white/[0.08] via-white/[0.02] to-transparent backdrop-blur-md" onClick={() => handleSelectAndSearch(fav.info.ticker)}><div className="relative z-10 flex flex-col gap-0.5"><div className="flex items-center justify-between gap-2"><h3 className="text-[12px] font-black text-white group-hover:text-pink-500 transition-colors uppercase tracking-tight truncate">{fav.info.ticker.split('.')[0]}</h3><SentimentIndicator analysis={fav.info.sentiment} size="sm" onClick={() => setSelectedSentiment({ ticker: fav.info.ticker.split('.')[0], analysis: fav.info.sentiment })} /></div><div className="relative flex items-center justify-between gap-1.5 border-t border-white/5 pt-2 mt-1.5"><span className="text-[13px] font-black text-white tabular-nums tracking-tighter">{fav.info.currentPrice.toFixed(2)}</span><div className={`text-[8px] font-black px-1 rounded border ${fav.info.change >= 0 ? 'text-emerald-400 border-emerald-400/20 bg-emerald-500/5' : 'text-rose-500 border-rose-500/20 bg-rose-500/5'}`}>{fav.info.changePercent.toFixed(1)}%</div></div></div></div>))}
                </div>
             </div>
           ) : (
             <div className="space-y-4 animate-in fade-in duration-500">
-               <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-4">
+               <div className="relative p-[1px] rounded-xl overflow-hidden w-full mb-3">
                   <motion.div
                     animate={{ rotate: 360 }}
                     transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                     className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(234,179,8,0.1)_90deg,rgba(234,179,8,0.6)_180deg,rgba(234,179,8,0.1)_270deg,transparent_360deg)] opacity-40"
                   />
                   <div className="relative flex items-center gap-3 px-3 py-2 bg-black/80 backdrop-blur-xl rounded-[calc(0.75rem-1px)] border border-white/5">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-yellow-500/20 to-transparent border border-yellow-500/40 text-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.15)]">
-                       <BellRing size={14} strokeWidth={2.5} />
+                    <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 shadow-sm">
+                       <BellRing size={12} strokeWidth={3} />
                     </div>
                     <div className="flex flex-col">
-                       <h2 className="text-[10px] font-black text-white uppercase tracking-[0.25em] leading-tight">Price Alerts</h2>
-                       <span className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Active Monitor</span>
-                    </div>
-                    <div className="ml-auto flex items-center gap-2">
-                       <div className="hidden sm:flex items-center gap-1.5 opacity-30">
-                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span className="text-[7px] font-black text-white uppercase tracking-widest">System Online</span>
-                       </div>
+                       <h2 className="text-[9px] font-black text-white uppercase tracking-[0.2em] leading-tight">Price Alerts</h2>
+                       <span className="text-[6px] font-bold text-white/50 uppercase tracking-widest mt-0.5">Active Thresholds</span>
                     </div>
                   </div>
                </div>
 
-               {/* iOS Install Prompt Alert */}
                {isIosAndNotStandalone && (
-                 <motion.div 
-                   initial={{ opacity: 0, y: -10 }} 
-                   animate={{ opacity: 1, y: 0 }}
-                   className="p-4 bg-pink-600/20 border border-pink-500/50 rounded-2xl flex flex-col gap-3 shadow-xl shadow-pink-500/5"
-                 >
-                   <div className="flex items-center gap-3">
-                     <div className="p-2 bg-pink-500 rounded-xl text-white">
-                        <Smartphone size={18} />
-                     </div>
-                     <div className="flex flex-col">
-                        <h4 className="text-[11px] font-black text-white uppercase tracking-widest">iOS Installation Required</h4>
-                        <span className="text-[8px] font-bold text-pink-400 uppercase tracking-widest">Browser restrictions apply</span>
-                     </div>
-                   </div>
-                   <p className="text-[10px] text-white/80 leading-relaxed font-medium">
-                     To enable Price Alerts on iPhone, tap the <span className="text-white font-bold underline">Share</span> button in Safari and select <span className="text-white font-bold underline">"Add to Home Screen"</span>.
+                 <div className="p-3 bg-pink-600/10 border border-pink-500/30 rounded-xl flex items-start gap-3 shadow-md">
+                   <Smartphone size={14} className="text-pink-500 shrink-0 mt-0.5" />
+                   <p className="text-[8px] text-white/80 leading-relaxed font-bold uppercase tracking-wider">
+                     Enable Notifications: Tap <span className="text-white underline">Share</span> then <span className="text-white underline">"Add to Home Screen"</span>.
                    </p>
-                 </motion.div>
+                 </div>
                )}
 
-               {/* Push Notification Diagnostics Card */}
-               <div className="glossy-card !border-white/30 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <div className={`p-2.5 rounded-xl border-2 transition-all ${
-                      pushStatus === 'granted' ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' :
-                      pushStatus === 'denied' ? 'bg-rose-500/10 border-rose-500/40 text-rose-400' :
-                      'bg-yellow-500/10 border-yellow-500/40 text-yellow-500'
-                    }`}>
-                      {pushStatus === 'granted' ? <ShieldCheck size={18} /> : 
-                       pushStatus === 'denied' ? <BellOff size={18} /> : 
-                       <AlertTriangle size={18} />}
-                    </div>
-                    <div className="flex flex-col">
-                      <h4 className="text-[11px] font-black text-white uppercase tracking-widest leading-none mb-1">Push System Status</h4>
-                      <p className={`text-[9px] font-bold uppercase tracking-widest ${
-                        pushStatus === 'granted' ? 'text-emerald-400/80' :
-                        pushStatus === 'denied' ? 'text-rose-400/80' :
-                        'text-yellow-400/80'
-                      }`}>
-                        {pushStatus === 'granted' ? (isPushSubscribed ? 'Alerts Optimized' : 'Permission Granted (Unsynced)') :
-                         pushStatus === 'denied' ? 'Alerts Blocked by OS' :
-                         'Action Required'}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    {(pushStatus === 'default' || (pushStatus === 'granted' && !isPushSubscribed)) && (
-                      <button 
-                        onClick={handleEnsureSubscription}
-                        disabled={isPushLoading}
-                        className="flex-1 sm:flex-none px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/10"
-                      >
-                        {isPushLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} fill="currentColor" />}
-                        {isPushSubscribed ? 'Fix Subscription' : 'Enable Notifications'}
-                      </button>
-                    )}
-                    {pushStatus === 'granted' && isPushSubscribed && (
-                      <button 
-                        onClick={handleEnsureSubscription}
-                        disabled={isPushLoading}
-                        className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/30 transition-all flex items-center justify-center gap-2 shadow-xl bg-white/10 text-white hover:bg-white/20"
-                      >
-                        {isPushLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                        Sync Settings
-                      </button>
-                    )}
-                    {pushStatus === 'denied' && (
-                      <div className="flex-1 sm:flex-none px-4 py-2 bg-rose-500/10 border border-rose-500/40 rounded-xl">
-                        <span className="text-[8px] font-black text-rose-400 uppercase tracking-widest">Reset Browser Permissions</span>
-                      </div>
-                    )}
-                  </div>
-               </div>
-
-               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 pt-2">
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {Array.isArray(userAlerts) && userAlerts.map(alert => (
                     <motion.div 
                       key={alert.id || `alert-${alert.ticker}-${alert.target_price}`} 
-                      layout
-                      initial={{ opacity: 0, scale: 0.98 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className={`relative overflow-hidden p-[1.5px] rounded-2xl transition-all duration-300 group shadow-lg hover:shadow-pink-500/10 bg-gradient-to-br ${
-                        alert.status === 'triggered' 
-                        ? 'from-yellow-400 via-yellow-600/40 to-transparent shadow-[0_0_20px_rgba(234,179,8,0.2)]' 
-                        : 'from-white/50 via-white/10 to-white/5 hover:from-white/70 hover:via-white/20'
-                      }`}
+                      className={`relative overflow-hidden p-[1px] rounded-xl transition-all bg-gradient-to-br ${alert.status === 'triggered' ? 'from-yellow-400/60 via-yellow-600/20 to-transparent' : 'from-white/20 via-white/5 to-transparent'}`}
                     >
-                      <div className={`relative h-full w-full rounded-[0.9rem] p-4 backdrop-blur-2xl flex flex-col gap-3 ${
-                        alert.status === 'triggered' 
-                        ? 'bg-black/80' 
-                        : 'bg-black/60'
-                      }`}>
-                        <div className="flex items-center justify-between relative z-10">
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-all ${
-                              alert.status === 'triggered' 
-                              ? 'bg-yellow-500/10 border-yellow-400/30 text-yellow-500' 
-                              : 'bg-white/5 border-white/10 text-white/40'
-                            }`}>
-                              {alert.status === 'triggered' ? <Zap size={16} strokeWidth={3} fill="currentColor" /> : <Clock size={16} strokeWidth={3} />}
+                      <div className={`relative h-full w-full rounded-[0.65rem] p-3 bg-black/80 backdrop-blur-xl flex flex-col gap-2`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center border ${alert.status === 'triggered' ? 'bg-yellow-500/10 border-yellow-400/30 text-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.3)]' : 'bg-white/5 border-white/10 text-white/30'}`}>
+                              {alert.status === 'triggered' ? <Zap size={12} fill="currentColor" /> : <Clock size={12} />}
                             </div>
                             <div className="flex flex-col">
-                              <h3 className="text-sm font-black text-white tracking-tight uppercase">{alert.ticker}</h3>
-                              <span className={`text-[7px] font-black uppercase tracking-widest ${
-                                alert.status === 'triggered' ? 'text-yellow-400' : 'text-emerald-400'
-                              }`}>
-                                {alert.status === 'triggered' ? 'Triggered' : 'Active'}
-                              </span>
+                              <h3 className="text-[10px] font-black text-white tracking-tight uppercase">{alert.ticker}</h3>
+                              <span className={`text-[6px] font-black uppercase tracking-widest ${alert.status === 'triggered' ? 'text-yellow-400' : 'text-emerald-400/80'}`}>{alert.status === 'triggered' ? 'Target Met' : 'Active'}</span>
                             </div>
                           </div>
-                          
-                          <button 
-                            onClick={() => alert.id && handleDeleteAlert(alert.id)} 
-                            className="p-1.5 bg-white/5 rounded-lg text-white/50 hover:text-rose-400 hover:bg-rose-500/10 transition-all border border-white/5 active:scale-95"
-                          >
-                            <Trash2 size={12} strokeWidth={2.5} />
-                          </button>
+                          <button onClick={() => alert.id && handleDeleteAlert(alert.id)} className="p-1 text-white/30 hover:text-rose-500 hover:bg-rose-500/5 transition-all"><Trash2 size={12} /></button>
                         </div>
-
-                        <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5 flex items-end justify-between relative z-10">
-                          <div className="flex flex-col">
-                             <div className="flex items-center gap-1 text-[7px] font-black text-white/30 uppercase tracking-widest mb-0.5">
-                               {alert.condition === 'above' ? 'Target Above' : 'Target Below'}
-                             </div>
-                             <div className="text-2xl font-black text-white tabular-nums tracking-tighter leading-none">
-                               {alert.target_price.toFixed(2)}
-                             </div>
-                          </div>
-                          
-                          <div className="text-right">
-                             <div className={`text-[7px] font-black uppercase tracking-widest flex items-center gap-0.5 justify-end mb-1 ${alert.condition === 'above' ? 'text-emerald-400/70' : 'text-rose-500/70'}`}>
-                                {alert.condition === 'above' ? <ArrowUpRight size={8} /> : <ArrowDownRight size={8} />}
-                                Threshold
-                             </div>
-                             <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest block">
-                               Notify on breach
-                             </span>
-                          </div>
+                        <div className="bg-white/[0.02] border border-white/10 rounded-lg p-2 flex items-center justify-between">
+                          <span className="text-[7px] font-black text-white/40 uppercase tracking-widest">{alert.condition === 'above' ? 'Above' : 'Below'}</span>
+                          <span className="text-[14px] font-black text-white tabular-nums tracking-tighter">{alert.target_price.toFixed(2)}</span>
                         </div>
                       </div>
                     </motion.div>
                   ))}
-                  {(!Array.isArray(userAlerts) || userAlerts.length === 0) && (
-                    <div className="col-span-full py-16 text-center rounded-2xl border-2 border-dashed border-white/5 flex flex-col items-center gap-3">
-                      <BellRing size={24} className="text-white/5" strokeWidth={1} />
-                      <div className="space-y-0.5">
-                        <span className="block text-[9px] font-black text-white/20 uppercase tracking-[0.2em]">No alerts config</span>
-                        <p className="text-[7px] text-white/10 uppercase tracking-widest">Select a symbol to start monitoring.</p>
-                      </div>
-                    </div>
-                  )}
                </div>
             </div>
           )}
           <div className="h-12 md:hidden"></div>
         </div>
       </main>
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[64px] glossy-card !bg-black/60 !rounded-2xl border !border-white/30 flex items-center justify-around shadow-2xl px-2">
-        <button onClick={() => setActiveView('dashboard')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${activeView === 'dashboard' ? 'text-pink-500' : 'text-white/40'}`}><LayoutDashboard size={20} strokeWidth={activeView === 'dashboard' ? 3 : 2} /><span className="text-[8px] font-black uppercase tracking-widest">Desk</span></button>
-        <button onClick={() => setActiveView('favorites')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${activeView === 'favorites' ? 'text-pink-500' : 'text-white/40'}`}><Heart size={20} strokeWidth={activeView === 'favorites' ? 3 : 2} fill={activeView === 'favorites' ? 'currentColor' : 'none'} /><span className="text-[8px] font-black uppercase tracking-widest">Watch</span></button>
-        <button onClick={() => setActiveView('alerts')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${activeView === 'alerts' ? 'text-yellow-500' : 'text-white/40'}`}><BellRing size={20} strokeWidth={activeView === 'alerts' ? 3 : 2} /><span className="text-[8px] font-black uppercase tracking-widest">Alerts</span></button>
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[58px] glossy-card !bg-black/70 !rounded-2xl border !border-white/30 flex items-center justify-around shadow-2xl px-2">
+        <button onClick={() => setActiveView('dashboard')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'dashboard' ? 'text-pink-500' : 'text-white/40'}`}><LayoutDashboard size={18} strokeWidth={activeView === 'dashboard' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Desk</span></button>
+        <button onClick={() => setActiveView('trade')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'trade' ? 'text-pink-500' : 'text-white/40'}`}><Briefcase size={18} strokeWidth={activeView === 'trade' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Trade</span></button>
+        <button onClick={() => setActiveView('favorites')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'favorites' ? 'text-pink-500' : 'text-white/40'}`}><Heart size={18} strokeWidth={activeView === 'favorites' ? 3 : 2} fill={activeView === 'favorites' ? 'currentColor' : 'none'} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Watch</span></button>
+        <button onClick={() => setActiveView('alerts')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'alerts' ? 'text-yellow-500' : 'text-white/40'}`}><BellRing size={18} strokeWidth={activeView === 'alerts' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Alerts</span></button>
       </nav>
     </div>
   );

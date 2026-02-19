@@ -12,6 +12,13 @@ const getAI = () => {
 };
 
 /**
+ * Helper to fetch the model name from localStorage override or use default.
+ */
+const getModelName = (defaultModel: string): string => {
+  return localStorage.getItem('stkr_override_model') || defaultModel;
+};
+
+/**
  * Generates a detailed intelligence report using Gemini 3 Pro with Google Search grounding.
  * HYBRID MODEL: Local Math Layer + AI Reasoning Layer.
  */
@@ -56,7 +63,7 @@ export const getAIIntelligenceReport = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-flash-latest",
+      model: getModelName("gemini-3-pro-preview"),
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -163,7 +170,7 @@ export const getWatchlistPulseReport = async (stocks: StockDetails[]): Promise<W
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-flash-latest",
+      model: getModelName("gemini-3-flash-preview"),
       contents: prompt,
       config: {
         responseMimeType: "application/json",

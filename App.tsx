@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4 } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem } from './types.ts';
@@ -20,6 +20,15 @@ const TIMEFRAMES: Record<Timeframe, { range: string; interval: string }> = {
   '1D': { range: '1y', interval: '1d' }
 };
 
+const RECOMMENDED_MODELS = [
+  { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', desc: 'Elite reasoning core', badge: '3-PRO', icon: Sparkles },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: 'Ultra-low latency', badge: '3-FAST', icon: Zap },
+  { id: 'gemini-2.5-pro-preview', name: 'Gemini 2.5 Pro', desc: 'Stable reasoning layer', badge: '2.5-PRO', icon: ShieldCheck },
+  { id: 'gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', desc: 'Balanced synthesis', badge: '2.5-FAST', icon: Activity },
+  { id: 'gemini-2.5-flash-lite-latest', name: 'Flash Lite', desc: 'Minimal footprint', badge: 'LITE', icon: Cpu },
+  { id: 'gemini-flash-latest', name: 'Flash Latest', desc: 'General purpose', badge: 'GEN', icon: Flame },
+];
+
 const AnimatedMarketBackground: React.FC = () => {
   return (
     <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
@@ -38,6 +47,98 @@ const AnimatedMarketBackground: React.FC = () => {
   );
 };
 
+const ModelSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [model, setModel] = useState(localStorage.getItem('stkr_override_model') || '');
+
+  const handleSave = () => {
+    if (model.trim()) {
+      localStorage.setItem('stkr_override_model', model.trim());
+    } else {
+      localStorage.removeItem('stkr_override_model');
+    }
+    onClose();
+    window.location.reload(); 
+  };
+
+  const handleReset = () => {
+    localStorage.removeItem('stkr_override_model');
+    onClose();
+    window.location.reload();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-3">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/85 backdrop-blur-xl" />
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative w-full max-w-sm glossy-card !border-white/40 rounded-2xl overflow-hidden p-4">
+        <div className="flex justify-between items-center mb-5">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-white/20 rounded-lg text-white"><Settings size={14} strokeWidth={2.5} /></div>
+            <div>
+              <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Engine Config</h2>
+              <p className="text-[7px] font-bold text-white/60 uppercase tracking-widest">Model Override Matrix</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-white/60 hover:text-white transition-colors"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <label className="text-[8px] font-black uppercase text-white/80 tracking-widest block px-1">Logic Layers</label>
+            <div className="grid grid-cols-1 gap-1.5 max-h-[42vh] overflow-y-auto custom-scrollbar pr-1">
+              {RECOMMENDED_MODELS.map((m) => {
+                const isActive = model === m.id;
+                const Icon = m.icon;
+                return (
+                  <button 
+                    key={m.id}
+                    onClick={() => setModel(m.id)}
+                    className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all text-left group ${isActive ? 'bg-pink-600/20 border-pink-500/60 shadow-lg' : 'bg-white/[0.04] border-white/10 hover:border-white/30'}`}
+                  >
+                    <div className={`p-1.5 rounded-lg shrink-0 ${isActive ? 'bg-pink-600 text-white' : 'bg-white/10 text-white/50'}`}>
+                      <Icon size={13} strokeWidth={isActive ? 3 : 2} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[9px] font-black uppercase tracking-tight truncate ${isActive ? 'text-white' : 'text-white/90'}`}>{m.name}</span>
+                        <span className={`text-[6px] font-black px-1 rounded uppercase shrink-0 ${isActive ? 'bg-pink-500 text-white' : 'bg-white/20 text-white/70'}`}>{m.badge}</span>
+                      </div>
+                      <p className={`text-[7px] font-bold truncate mt-0.5 ${isActive ? 'text-pink-300' : 'text-white/50'}`}>{m.desc}</p>
+                    </div>
+                    {isActive && <Check size={14} className="text-pink-500 shrink-0" strokeWidth={4} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center px-1">
+              <label className="text-[8px] font-black uppercase text-white/80 tracking-widest block">Custom ID</label>
+              {model && !RECOMMENDED_MODELS.find(rm => rm.id === model) && <span className="text-[6px] font-black text-pink-400 uppercase tracking-tighter">Manual Link Active</span>}
+            </div>
+            <input 
+              type="text" 
+              placeholder="Enter model string..." 
+              value={model} 
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full bg-white/[0.05] border border-white/30 rounded-lg px-3 py-2.5 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all placeholder:text-white/30" 
+            />
+          </div>
+
+          <div className="flex gap-2.5 pt-1">
+            <button onClick={handleSave} className="flex-1 bg-white text-black py-3 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 hover:bg-white/90 border border-transparent">
+              Apply Engine
+            </button>
+            <button onClick={handleReset} className="px-5 bg-white/10 text-white/80 py-3 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border border-white/10 hover:text-white hover:bg-white/20">
+              Reset
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const AddTradeModal: React.FC<{ onClose: () => void; onAdd: (item: Omit<PortfolioItem, 'id' | 'currentPrice'>) => void }> = ({ onClose, onAdd }) => {
   const [ticker, setTicker] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -50,7 +151,6 @@ const AddTradeModal: React.FC<{ onClose: () => void; onAdd: (item: Omit<Portfoli
       const delayDebounceFn = setTimeout(async () => {
         setIsSearching(true);
         const res = await searchStocks(ticker);
-        // Prioritize .NS symbols and sort by match
         const sorted = [...res].sort((a, b) => {
           const aNS = a.symbol.toUpperCase().endsWith('.NS');
           const bNS = b.symbol.toUpperCase().endsWith('.NS');
@@ -331,25 +431,22 @@ const App: React.FC = () => {
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isPulseModalOpen, setIsPulseModalOpen] = useState(false);
+  const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [clearLinesSignal, setClearLinesSignal] = useState(0);
 
-  // Trade / Portfolio logic
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [isAddTradeModalOpen, setIsAddTradeModalOpen] = useState(false);
   const [isPortfolioLoading, setIsPortfolioLoading] = useState(false);
 
-  // Alerts logic
   const [userAlerts, setUserAlerts] = useState<Alert[]>([]);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
 
-  // Push notification state
   const [pushStatus, setPushStatus] = useState<NotificationPermission>('default');
   const [isPushSubscribed, setIsPushSubscribed] = useState(false);
   const [isPushLoading, setIsPushLoading] = useState(false);
 
-  // Favorites screen filter states
   const [favSearchTerm, setFavSearchTerm] = useState('');
   const [favFilter, setFavFilter] = useState<SentimentFilter>('all');
 
@@ -495,7 +592,6 @@ const App: React.FC = () => {
     setError(null);
     try {
       const permission = getNotificationPermission();
-      
       if (permission === 'default') {
         const result = await requestNotificationPermission();
         setPushStatus(result);
@@ -504,16 +600,11 @@ const App: React.FC = () => {
         setError("Notifications blocked. Please reset site permissions in your browser settings.");
         return false;
       }
-      
       const success = await subscribeUser();
       setIsPushSubscribed(success);
-      if (!success) {
-        setError("Registry Sync Failed: Check Worker Database status (D1 Tables) and VAPID Keys.");
-      }
       return success;
     } catch (e) {
-      console.error("Subscription flow error:", e);
-      setError("Handshake Error: Failed to secure push token from browser service.");
+      setError("Handshake Error: Failed to secure push token.");
       return false;
     } finally {
       setIsPushLoading(false);
@@ -522,31 +613,27 @@ const App: React.FC = () => {
 
   const handleSaveAlert = async (price: number, condition: 'above' | 'below'): Promise<boolean> => {
     if (!stockData) return false;
-    
     setError(null);
     try {
       const subSuccess = await handleEnsureSubscription();
       if (!subSuccess && !isPushSubscribed) {
         console.warn("Saving alert without an active push subscription.");
       }
-
       const success = await createAlert({
         ticker: stockData.info.ticker,
         target_price: price,
         condition: condition
       });
-
       if (success) {
         await refreshAlerts();
         setIsAlertModalOpen(false);
         return true;
       } else {
-        setError("Unable to save alert. Ensure D1 Tables exist and Worker is deployed.");
+        setError("Unable to save alert. Check Worker status.");
         return false;
       }
     } catch (err) {
-      console.error("Alert save crash:", err);
-      setError("An unexpected error occurred while saving alert.");
+      setError("An unexpected error occurred.");
       return false;
     }
   };
@@ -629,6 +716,7 @@ const App: React.FC = () => {
         {selectedSentiment && <SentimentDetailModal ticker={selectedSentiment.ticker} analysis={selectedSentiment.analysis} onClose={() => setSelectedSentiment(null)} />}
         {isAlertModalOpen && stockData && <AlertModal ticker={stockData.info.ticker} currentPrice={stockData.info.currentPrice} onClose={() => setIsAlertModalOpen(false)} onSave={handleSaveAlert} />}
         {isAddTradeModalOpen && <AddTradeModal onClose={() => setIsAddTradeModalOpen(false)} onAdd={handleAddPortfolioItem} />}
+        {isModelSettingsOpen && <ModelSettingsModal onClose={() => setIsModelSettingsOpen(false)} />}
         {isAIModalOpen && stockData && (
           <AIIntelligenceModal 
             ticker={stockData.info.ticker} 
@@ -667,13 +755,25 @@ const App: React.FC = () => {
       </AnimatePresence>
 
       <aside className="hidden md:flex flex-col w-[70px] glossy-card !bg-black/30 !rounded-none !border-y-0 !border-l-0 border-r !border-white/50 z-30 shrink-0">
-        <div className="p-4 flex justify-center"><div className="bg-pink-600 w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-xl border border-white/40"><TrendingUp size={20} strokeWidth={4} /></div></div>
+        <div className="p-4 flex justify-center">
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsModelSettingsOpen(true)}
+            className="bg-pink-600 w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-xl border border-white/40 cursor-pointer"
+          >
+            <TrendingUp size={20} strokeWidth={4} />
+          </motion.button>
+        </div>
         <nav className="flex-1 px-2 space-y-4 mt-6">
           <button onClick={() => setActiveView('dashboard')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'dashboard' ? 'bg-white/15 text-white border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><LayoutDashboard size={20} /></button>
           <button onClick={() => setActiveView('trade')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'trade' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Briefcase size={20} /></button>
           <button onClick={() => setActiveView('favorites')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'favorites' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Heart size={20} /></button>
           <button onClick={() => setActiveView('alerts')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'alerts' ? 'bg-white/15 text-yellow-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><BellRing size={20} /></button>
         </nav>
+        <div className="p-4 mb-2 flex justify-center">
+          <button onClick={() => setIsModelSettingsOpen(true)} className="p-2 text-white/20 hover:text-white transition-all"><Settings size={18} /></button>
+        </div>
       </aside>
 
       <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-32 md:pb-6 p-3 md:p-6 relative z-10 bg-black/10">
@@ -687,9 +787,14 @@ const App: React.FC = () => {
                     className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.8)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-60"
                   />
                   <div className="relative flex items-center gap-4 px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10">
-                    <div className="p-2 rounded-lg bg-pink-600 text-white shadow-[0_0_15px_rgba(236,72,153,0.4)] border border-white/20">
+                    <motion.button 
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setIsModelSettingsOpen(true)}
+                      className="p-2 rounded-lg bg-pink-600 text-white shadow-[0_0_15px_rgba(236,72,153,0.4)] border border-white/20 cursor-pointer"
+                    >
                        <TrendingUp size={16} strokeWidth={4} />
-                    </div>
+                    </motion.button>
                     <div className="flex flex-col">
                        <h1 className="text-sm font-black text-white uppercase tracking-[0.3em] leading-tight">Stocker</h1>
                        <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.4em]">Professional Analytics</span>
@@ -812,7 +917,6 @@ const App: React.FC = () => {
                               <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.symbol)}>
                                 <div className="flex flex-col">
                                   <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.symbol}</span>
-                                
                                 </div>
                               </td>
                               <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>

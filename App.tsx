@@ -21,12 +21,12 @@ const TIMEFRAMES: Record<Timeframe, { range: string; interval: string }> = {
 };
 
 const RECOMMENDED_MODELS = [
-  { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', desc: 'Elite reasoning core', badge: '3-PRO', icon: Sparkles },
+  { id: 'gemini-flash-latest', name: 'Gemini Flash', desc: 'Fast & Stable (Recommended)', badge: 'FLASH', icon: Zap },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Elite reasoning core', badge: '3.1-PRO', icon: Sparkles },
   { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: 'Ultra-low latency', badge: '3-FAST', icon: Zap },
   { id: 'gemini-2.5-pro-preview', name: 'Gemini 2.5 Pro', desc: 'Stable reasoning layer', badge: '2.5-PRO', icon: ShieldCheck },
   { id: 'gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', desc: 'Balanced synthesis', badge: '2.5-FAST', icon: Activity },
   { id: 'gemini-2.5-flash-lite-latest', name: 'Flash Lite', desc: 'Minimal footprint', badge: 'LITE', icon: Cpu },
-  { id: 'gemini-flash-latest', name: 'Flash Latest', desc: 'General purpose', badge: 'GEN', icon: Flame },
 ];
 
 const AnimatedMarketBackground: React.FC = () => {

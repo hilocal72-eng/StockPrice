@@ -22,13 +22,14 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
-  useEffect(() => {
-    const fetchReport = async () => {
-      const data = await getAIIntelligenceReport(ticker, currentPrice, history);
-      setReport(data);
-      setLoading(false);
-    };
+  const fetchReport = async () => {
+    setLoading(true);
+    const data = await getAIIntelligenceReport(ticker, currentPrice, history);
+    setReport(data);
+    setLoading(false);
+  };
 
+  useEffect(() => {
     fetchReport();
   }, [ticker, currentPrice, history]);
 
@@ -321,8 +322,13 @@ const AIIntelligenceModal: React.FC<AIIntelligenceModalProps> = ({ ticker, curre
           ) : (
             <div className="h-full flex items-center justify-center py-20 px-6 text-center">
               <div className="space-y-4 max-w-xs">
-                <ShieldAlert size={40} className="text-rose-500/40 mx-auto" />
-                <p className="text-[11px] text-rose-400 font-black uppercase tracking-widest leading-relaxed">Neural Analysis Disconnected or Unavailable</p>
+                <ShieldAlert size={40} className="mx-auto text-rose-500/40" />
+                <p className="text-[11px] font-black uppercase tracking-widest leading-relaxed text-rose-400">
+                  Neural Analysis Disconnected
+                </p>
+                <p className="text-[9px] text-white/40 font-bold uppercase tracking-widest">
+                  Check API Key or Network Status
+                </p>
                 <button onClick={onClose} className="px-8 py-2.5 rounded-xl bg-white/10 text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all border border-white/20">Return to Desk</button>
               </div>
             </div>

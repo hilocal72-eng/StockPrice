@@ -4,7 +4,7 @@ import { PricePoint, AIAnalysisResult, StockDetails, WatchlistStockAnalysis } fr
 import { getTechnicalIndicators } from "./technicalAnalysis.ts";
 
 const getAI = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!apiKey) {
     throw new Error("Gemini API Key is missing. Please check your environment variables.");
   }
@@ -34,7 +34,6 @@ export const getAIIntelligenceReport = async (
     const techData = getTechnicalIndicators(history);
     
     const prompt = `
-      Act as a world-class senior financial analyst. 
       Analyze the stock: ${ticker} (Current Price: ${currentPrice}).
       
       VERIFIED TECHNICAL DATA (Math Layer):
@@ -62,53 +61,107 @@ export const getAIIntelligenceReport = async (
       - Do not include markdown blocks or extra text.
     `;
 
-    const response = await ai.models.generateContent({
-      model: getModelName("gemini-3-pro-preview"),
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            newsSummary: { type: Type.STRING },
-            newsBullets: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING },
-              description: "Exactly 3 concise news bullet points."
-            },
-            supportLevels: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-            resistanceLevels: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-            patterns: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING },
-              description: "Patterns with dates in brackets."
-            },
-            technicalSummary: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING },
-              description: "3 concise technical summary bullet points."
-            },
-            signal: { type: Type.STRING, description: "BUY, SELL, or NO OPPORTUNITY" },
-            signalReasoning: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING },
-              description: "3 concise reasoning bullet points."
-            },
-            tradeLevels: {
-              type: Type.OBJECT,
-              properties: {
-                entry: { type: Type.NUMBER },
-                target1: { type: Type.NUMBER },
-                target2: { type: Type.NUMBER },
-                stopLoss: { type: Type.NUMBER }
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: getModelName("gemini-3-flash-preview"),
+        contents: prompt,
+        config: {
+          systemInstruction: "You are a world-class senior financial analyst. Return ONLY valid JSON as requested.",
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              newsSummary: { type: Type.STRING },
+              newsBullets: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "Exactly 3 concise news bullet points."
+              },
+              supportLevels: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+              resistanceLevels: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+              patterns: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "Patterns with dates in brackets."
+              },
+              technicalSummary: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "3 concise technical summary bullet points."
+              },
+              signal: { type: Type.STRING, description: "BUY, SELL, or NO OPPORTUNITY" },
+              signalReasoning: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "3 concise reasoning bullet points."
+              },
+              tradeLevels: {
+                type: Type.OBJECT,
+                properties: {
+                  entry: { type: Type.NUMBER },
+                  target1: { type: Type.NUMBER },
+                  target2: { type: Type.NUMBER },
+                  stopLoss: { type: Type.NUMBER }
+                }
               }
-            }
-          },
-          required: ["newsBullets", "supportLevels", "resistanceLevels", "patterns", "technicalSummary", "signal", "signalReasoning"]
-        }
-      },
-    });
+            },
+            required: ["newsBullets", "supportLevels", "resistanceLevels", "patterns", "technicalSummary", "signal", "signalReasoning"]
+          }
+        },
+      });
+    } catch (toolError: any) {
+      console.warn("AI Analysis with Google Search failed, retrying without tools...", toolError.message || toolError);
+      // Retry without tools
+      response = await ai.models.generateContent({
+        model: getModelName("gemini-3-flash-preview"),
+        contents: prompt + "\n\nNote: Google Search is unavailable, use your internal knowledge for recent context if possible.",
+        config: {
+          systemInstruction: "You are a world-class senior financial analyst. Return ONLY valid JSON as requested.",
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              newsSummary: { type: Type.STRING },
+              newsBullets: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "Exactly 3 concise news bullet points."
+              },
+              supportLevels: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+              resistanceLevels: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+              patterns: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "Patterns with dates in brackets."
+              },
+              technicalSummary: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "3 concise technical summary bullet points."
+              },
+              signal: { type: Type.STRING, description: "BUY, SELL, or NO OPPORTUNITY" },
+              signalReasoning: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "3 concise reasoning bullet points."
+              },
+              tradeLevels: {
+                type: Type.OBJECT,
+                properties: {
+                  entry: { type: Type.NUMBER },
+                  target1: { type: Type.NUMBER },
+                  target2: { type: Type.NUMBER },
+                  stopLoss: { type: Type.NUMBER }
+                }
+              }
+            },
+            required: ["newsBullets", "supportLevels", "resistanceLevels", "patterns", "technicalSummary", "signal", "signalReasoning"]
+          }
+        },
+      });
+    }
 
     const text = response.text;
     if (!text) return null;
@@ -130,11 +183,11 @@ export const getAIIntelligenceReport = async (
         technicalData: techData // Include the math layer data in the result for the UI
       };
     } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError);
+      console.error("Failed to parse AI response. Raw text:", text, parseError);
       return null;
     }
-  } catch (error) {
-    console.error("AI Analysis Error:", error);
+  } catch (error: any) {
+    console.error("AI Analysis Error:", error.message || error);
     return null;
   }
 };

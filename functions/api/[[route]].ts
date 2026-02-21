@@ -183,7 +183,7 @@ app.post('/push/unsubscribe', async (c) => {
 });
 
 // --- Web Push Helper (Cloudflare Workers Web Crypto Implementation) ---
-async function sendWebPush(endpoint: string, payloadData: any, p256dh: string, auth: string) {
+async function sendWebPush(endpoint: string, payloadData: any, p256dh: string, auth: string, db: D1Database) {
   try {
     const pub = 'BF4IGtj7crhYY7soDeugjInerPdrAGUzUNiSXuNDSI_TW7C52PPOZKmRqt3UyatsFIkG2vK-8MI-aCuTAUIHH94';
     const priv = 'iBfKC94k67XIn0svr-7zAijB8TvLQGQ4sXnXf1XtZUU';
@@ -229,6 +229,12 @@ async function sendWebPush(endpoint: string, payloadData: any, p256dh: string, a
     if (!pushResponse.ok) {
         const text = await pushResponse.text();
         console.error(`Push failed with body: ${text}`);
+        
+        // If the subscription is expired or invalid, delete it from the database
+        if (pushResponse.status === 410 || pushResponse.status === 404) {
+            await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run();
+            console.log(`Deleted stale subscription: ${endpoint}`);
+        }
     }
   } catch (e) {
     console.error('Push failed:', e);
@@ -281,7 +287,8 @@ app.get('/cron/check', async (c) => {
                   url: '/alerts'
                 },
                 sub.p256dh as string,
-                sub.auth as string
+                sub.auth as string,
+                c.env.DB
               );
             }
             triggeredCount++;

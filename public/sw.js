@@ -9,33 +9,39 @@ self.addEventListener('activate', (event) => event.waitUntil(clients.claim()));
  * PUSH EVENT HANDLER
  */
 self.addEventListener('push', (event) => {
-  let data = {
-    title: 'Target Hit!',
-    body: 'A stock price alert was triggered.',
-    url: '/alerts'
-  };
+  let title = 'Target Hit!';
+  let body = 'A stock price alert was triggered.';
+  let url = '/alerts';
 
   if (event.data) {
     try {
-      data = event.data.json();
+      const text = event.data.text();
+      if (text) {
+        try {
+          const json = JSON.parse(text);
+          title = json.title || title;
+          body = json.body || body;
+          url = json.url || url;
+        } catch (e) {
+          body = text;
+        }
+      }
     } catch (e) {
-      data.body = event.data.text();
+      console.error('Error parsing push data', e);
     }
   }
 
   const options = {
-    body: data.body,
+    body: body,
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
-    tag: 'stock-alert',
-    vibrate: [200, 100, 200],
-    data: { url: data.url || '/alerts' },
-    renotify: true,
-    requireInteraction: true // Keeps notification visible until user acts
+    tag: 'stock-alert-' + Date.now(),
+    data: { url: url },
+    renotify: true
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(title, options)
   );
 });
 

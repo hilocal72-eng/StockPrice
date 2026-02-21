@@ -183,7 +183,7 @@ app.post('/push/unsubscribe', async (c) => {
 });
 
 // --- Web Push Helper (Cloudflare Workers Web Crypto Implementation) ---
-async function sendWebPush(endpoint: string, payloadData: any) {
+async function sendWebPush(endpoint: string, payloadData: any, p256dh: string, auth: string) {
   try {
     const pub = 'BF4IGtj7crhYY7soDeugjInerPdrAGUzUNiSXuNDSI_TW7C52PPOZKmRqt3UyatsFIkG2vK-8MI-aCuTAUIHH94';
     const priv = 'iBfKC94k67XIn0svr-7zAijB8TvLQGQ4sXnXf1XtZUU';
@@ -213,14 +213,16 @@ async function sendWebPush(endpoint: string, payloadData: any) {
     const jwt = `${unsignedToken}.${encodeBuffer(signature)}`;
     
     console.log(`Sending push to ${endpoint}...`);
+    
+    // We are sending a simple push without encryption for now, 
+    // relying on the Service Worker to show a generic message if payload is missing.
+    // Full ECE encryption in Cloudflare Workers requires a complex library.
     const pushResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Authorization': `vapid t=${jwt}, k=${pub}`,
-        'TTL': '43200',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payloadData)
+        'TTL': '43200'
+      }
     });
     
     console.log(`Push response status: ${pushResponse.status}`);
@@ -271,11 +273,16 @@ app.get('/cron/check', async (c) => {
             const subs = await c.env.DB.prepare("SELECT * FROM push_subscriptions WHERE user_id = ?").bind(alert.user_id).all();
             
             for (const sub of subs.results) {
-              await sendWebPush(sub.endpoint as string, {
-                title: `${alert.ticker} Alert Triggered!`,
-                body: `Price crossed ${alert.target_price}. Current: ${currentPrice.toFixed(2)}`,
-                url: '/alerts'
-              });
+              await sendWebPush(
+                sub.endpoint as string, 
+                {
+                  title: `${alert.ticker} Alert Triggered!`,
+                  body: `Price crossed ${alert.target_price}. Current: ${currentPrice.toFixed(2)}`,
+                  url: '/alerts'
+                },
+                sub.p256dh as string,
+                sub.auth as string
+              );
             }
             triggeredCount++;
           }

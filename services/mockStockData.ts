@@ -9,7 +9,8 @@ const fetchYahoo = async (symbol: string, interval: string, range: string): Prom
   try {
     const cacheBuster = `&t=${Date.now()}`;
     const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}&includePrePost=false${cacheBuster}`;
-    const url = `https://holy-sun-212b.hilocal72.workers.dev/`;
+    // Use local proxy instead of Cloudflare worker
+    const url = `/api/proxy`;
     const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
     if (!response.ok) return null;
     const data = await response.json();
@@ -24,7 +25,8 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
   if (!query || query.trim().length < 1) return [];
   try {
     const targetUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=US&quotesCount=6&newsCount=0&listsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true`;
-    const url = `https://holy-sun-212b.hilocal72.workers.dev/`;
+    // Use local proxy instead of Cloudflare worker
+    const url = `/api/proxy`;
     const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
     if (!response.ok) return [];
     const data = await response.json();

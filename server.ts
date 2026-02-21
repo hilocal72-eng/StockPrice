@@ -1,15 +1,23 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 import webpush from "web-push";
 import cors from "cors";
+import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-console.log("Starting Stocker Server...");
+console.log("Starting Stocker Server (Production Mode)...");
+
+process.on('uncaughtException', (err) => {
+  console.error('STKR_LOG: Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('STKR_LOG: Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 const db = new Database(path.join(__dirname, "stocker.db"));
 
@@ -72,6 +80,9 @@ async function startServer() {
   }));
   app.use(express.json());
   
+  // Connectivity test
+  app.get("/ping", (req, res) => res.send("pong"));
+  
   // Add simple logging middleware
   app.use((req, res, next) => {
     console.log(`STKR_LOG: ${new Date().toISOString()} - ${req.method} ${req.url}`);
@@ -86,8 +97,36 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Proxy Endpoint for Yahoo Finance
+  app.get("/api/proxy", async (req, res) => {
+    const targetUrl = req.query.url as string;
+    if (!targetUrl) {
+      return res.status(400).json({ error: "Missing url parameter" });
+    }
+
+    try {
+      // We use a custom User-Agent to avoid being blocked by Yahoo
+      const response = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+      
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `Upstream error: ${response.statusText}` });
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (err) {
+      console.error("Proxy error:", err);
+      res.status(500).json({ error: "Failed to fetch data" });
+    }
+  });
+
   // Auth Endpoints
   app.post("/api/auth/register", (req, res) => {
+    console.log(`STKR_LOG: Register attempt for username: ${req.body.username}`);
     const { username } = req.body;
     if (!username || username.length < 3) {
       return res.status(400).json({ error: "Invalid username" });
@@ -107,6 +146,7 @@ async function startServer() {
   });
 
   app.post("/api/auth/login", (req, res) => {
+    console.log(`STKR_LOG: Login attempt for username: ${req.body.username}`);
     const { username } = req.body;
     const stmt = db.prepare("SELECT * FROM users WHERE username = ?");
     const user = stmt.get(username.toLowerCase());
@@ -221,12 +261,6 @@ async function startServer() {
     }
   });
 
-  // Catch-all for undefined API routes to prevent falling through to static server
-  app.all("/api/*", (req, res) => {
-    console.log(`STKR_LOG: Unhandled API route: ${req.method} ${req.url}`);
-    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
-  });
-
   // Admin Endpoints
   app.get("/api/admin/users", (req, res) => {
     const requester = req.query.requester as string;
@@ -246,6 +280,12 @@ async function startServer() {
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch users" });
     }
+  });
+
+  // Catch-all for undefined API routes
+  app.use("/api", (req, res) => {
+    console.log(`STKR_LOG: Unhandled API route: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
   });
 
   // Background Task: Price Checker & Push Sender
@@ -291,23 +331,30 @@ async function startServer() {
     }
   }, 30000); // Check every 30 seconds
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
-  }
+  // Serve static files from the dist directory
+  app.use(express.static(path.join(__dirname, "dist")));
 
+  // Handle SPA routing: serve index.html for all non-API routes
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "dist", "index.html"));
+  });
+
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("STKR_LOG: Global Error Handler caught:", err);
+    res.status(500).send(`
+      <html>
+        <body>
+          <h1>Internal Server Error</h1>
+          <pre>${err.stack || err.message || err}</pre>
+        </body>
+      </html>
+    `);
+  });
+
+  // Start Server
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`STKR_LOG: Server is officially listening on port ${PORT}`);
-    console.log(`STKR_LOG: Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`STKR_LOG: Server started and listening on port ${PORT}`);
   });
 }
 

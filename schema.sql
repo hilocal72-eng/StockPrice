@@ -1,0 +1,30 @@
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS alerts;
+DROP TABLE IF EXISTS push_subscriptions;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  favorites TEXT DEFAULT '[]',
+  portfolio TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  ticker TEXT NOT NULL,
+  target_price REAL NOT NULL,
+  condition TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  endpoint TEXT UNIQUE NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id)
+);

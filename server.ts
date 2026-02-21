@@ -65,12 +65,19 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(cors());
+  app.use(cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  }));
   app.use(express.json());
   
   // Add simple logging middleware
   app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    console.log(`STKR_LOG: ${new Date().toISOString()} - ${req.method} ${req.url}`);
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
     next();
   });
 
@@ -212,6 +219,12 @@ async function startServer() {
     } catch (err) {
       res.status(500).json({ error: "Failed to unsubscribe" });
     }
+  });
+
+  // Catch-all for undefined API routes to prevent falling through to static server
+  app.all("/api/*", (req, res) => {
+    console.log(`STKR_LOG: Unhandled API route: ${req.method} ${req.url}`);
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
   // Admin Endpoints

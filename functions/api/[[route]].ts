@@ -183,7 +183,7 @@ app.post('/push/unsubscribe', async (c) => {
 });
 
 // --- Web Push Helper (Cloudflare Workers Web Crypto Implementation) ---
-async function sendWebPush(endpoint: string) {
+async function sendWebPush(endpoint: string, payloadData: any) {
   try {
     const pub = 'BF4IGtj7crhYY7soDeugjInerPdrAGUzUNiSXuNDSI_TW7C52PPOZKmRqt3UyatsFIkG2vK-8MI-aCuTAUIHH94';
     const priv = 'iBfKC94k67XIn0svr-7zAijB8TvLQGQ4sXnXf1XtZUU';
@@ -210,14 +210,20 @@ async function sendWebPush(endpoint: string) {
     const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsignedToken));
     const jwt = `${unsignedToken}.${encodeBuffer(signature)}`;
     
-    // Send empty payload push (triggers default message in sw.js)
-    await fetch(endpoint, {
+    console.log(`Sending push to ${endpoint}...`);
+    const pushResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Authorization': `vapid t=${jwt}, k=${pub}`,
         'TTL': '43200'
       }
     });
+    
+    console.log(`Push response status: ${pushResponse.status}`);
+    if (!pushResponse.ok) {
+        const text = await pushResponse.text();
+        console.error(`Push failed with body: ${text}`);
+    }
   } catch (e) {
     console.error('Push failed:', e);
   }
@@ -261,7 +267,11 @@ app.get('/cron/check', async (c) => {
             const subs = await c.env.DB.prepare("SELECT * FROM push_subscriptions WHERE user_id = ?").bind(alert.user_id).all();
             
             for (const sub of subs.results) {
-              await sendWebPush(sub.endpoint as string);
+              await sendWebPush(sub.endpoint as string, {
+                title: `${alert.ticker} Alert Triggered!`,
+                body: `Price crossed ${alert.target_price}. Current: ${currentPrice.toFixed(2)}`,
+                url: '/alerts'
+              });
             }
             triggeredCount++;
           }

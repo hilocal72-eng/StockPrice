@@ -182,6 +182,102 @@ app.post('/push/unsubscribe', async (c) => {
   }
 });
 
+// --- Web Push Helper (Cloudflare Workers Web Crypto Implementation) ---
+async function sendWebPush(endpoint: string) {
+  try {
+    const pub = 'BF4IGtj7crhYY7soDeugjInerPdrAGUzUNiSXuNDSI_TW7C52PPOZKmRqt3UyatsFIkG2vK-8MI-aCuTAUIHH94';
+    const priv = 'iBfKC94k67XIn0svr-7zAijB8TvLQGQ4sXnXf1XtZUU';
+    
+    // Decode base64url public key to extract X and Y coordinates for JWK
+    const raw = atob((pub + '==').replace(/-/g, '+').replace(/_/g, '/'));
+    const x = btoa(raw.substring(1, 33)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const y = btoa(raw.substring(33, 65)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    
+    const jwk = { kty: 'EC', crv: 'P-256', d: priv, x, y, ext: true };
+    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+    
+    const url = new URL(endpoint);
+    const aud = `${url.protocol}//${url.host}`;
+    const exp = Math.floor(Date.now() / 1000) + 12 * 60 * 60;
+    
+    const header = { typ: 'JWT', alg: 'ES256' };
+    const payload = { aud, exp, sub: 'mailto:admin@stocker.app' };
+    
+    const encodeBase64Url = (str: string) => btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const encodeBuffer = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    
+    const unsignedToken = `${encodeBase64Url(JSON.stringify(header))}.${encodeBase64Url(JSON.stringify(payload))}`;
+    const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsignedToken));
+    const jwt = `${unsignedToken}.${encodeBuffer(signature)}`;
+    
+    // Send empty payload push (triggers default message in sw.js)
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `vapid t=${jwt}, k=${pub}`,
+        'TTL': '43200'
+      }
+    });
+  } catch (e) {
+    console.error('Push failed:', e);
+  }
+}
+
+// Cron Job Endpoint (Trigger this via external service like cron-job.org)
+app.get('/cron/check', async (c) => {
+  const secret = c.req.query('secret');
+  if (secret !== 'stocker_cron_secret_2024') {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const alerts = await c.env.DB.prepare("SELECT a.*, u.username FROM alerts a JOIN users u ON a.user_id = u.id WHERE a.status = 'active'").all();
+    
+    if (!alerts.results || alerts.results.length === 0) {
+      return c.json({ status: 'no active alerts' });
+    }
+
+    let triggeredCount = 0;
+    const tickers = [...new Set(alerts.results.map((a: any) => a.ticker))];
+    
+    for (const ticker of tickers) {
+      try {
+        const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+        const response = await fetch(yfUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const data = await response.json() as any;
+        
+        if (!data.chart || !data.chart.result || data.chart.result.length === 0) continue;
+        const currentPrice = data.chart.result[0].meta.regularMarketPrice;
+
+        const tickerAlerts = alerts.results.filter((a: any) => a.ticker === ticker);
+        
+        for (const alert of tickerAlerts) {
+          let triggered = false;
+          if (alert.condition === 'above' && currentPrice >= alert.target_price) triggered = true;
+          if (alert.condition === 'below' && currentPrice <= alert.target_price) triggered = true;
+
+          if (triggered) {
+            await c.env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ?").bind(alert.id).run();
+            const subs = await c.env.DB.prepare("SELECT * FROM push_subscriptions WHERE user_id = ?").bind(alert.user_id).all();
+            
+            for (const sub of subs.results) {
+              await sendWebPush(sub.endpoint as string);
+            }
+            triggeredCount++;
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to process ${ticker}:`, e);
+      }
+    }
+
+    return c.json({ status: 'success', triggered: triggeredCount });
+  } catch (err) {
+    console.error('Cron error:', err);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Admin Endpoints
 app.get('/admin/users', async (c) => {
   const requester = c.req.query('requester');

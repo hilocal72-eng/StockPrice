@@ -215,8 +215,10 @@ async function sendWebPush(endpoint: string, payloadData: any) {
       method: 'POST',
       headers: {
         'Authorization': `vapid t=${jwt}, k=${pub}`,
-        'TTL': '43200'
-      }
+        'TTL': '43200',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payloadData)
     });
     
     console.log(`Push response status: ${pushResponse.status}`);

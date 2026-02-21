@@ -1,12 +1,15 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem } from './types.ts';
 import TerminalChart from './components/TerminalChart.tsx';
 import AIIntelligenceModal from './components/AIIntelligenceModal.tsx';
 import WatchlistPulseModal from './components/WatchlistPulseModal.tsx';
+import LoginScreen from './components/LoginScreen.tsx';
+import SplashScreen from './components/SplashScreen.tsx';
+import AdminPanelModal from './components/AdminPanelModal.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
 import { isPushSupported, getNotificationPermission, requestNotificationPermission, subscribeUser, unsubscribeUser, getPushSubscription } from './services/pushNotificationService.ts';
 
@@ -431,6 +434,46 @@ const App: React.FC = () => {
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isPulseModalOpen, setIsPulseModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<string | null>(localStorage.getItem('stkr_current_user'));
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Sync profile to server
+  const syncProfile = useCallback(async (username: string, favs: string[], port: PortfolioItem[]) => {
+    try {
+      await fetch('/api/user/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, favorites: favs, portfolio: port })
+      });
+    } catch (err) {
+      console.error("Failed to sync profile:", err);
+    }
+  }, []);
+
+  // User-specific storage keys
+  const getStorageKey = useCallback((base: string) => {
+    return currentUser ? `stkr_${currentUser}_${base}` : `stkr_anon_${base}`;
+  }, [currentUser]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleLogin = (username: string) => {
+    setCurrentUser(username);
+    localStorage.setItem('stkr_current_user', username);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('stkr_current_user');
+    setFavorites([]);
+    setPortfolio([]);
+    setFavoriteStocksDetails([]);
+    setStockData(null);
+  };
   const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
@@ -503,10 +546,11 @@ const App: React.FC = () => {
     setFavorites(prev => {
       const isFav = prev.includes(ticker);
       const next = isFav ? prev.filter(f => f !== ticker) : [...prev, ticker];
-      localStorage.setItem('stkr_favs_v2', JSON.stringify(next));
+      localStorage.setItem(getStorageKey('favs_v2'), JSON.stringify(next));
+      if (currentUser) syncProfile(currentUser, next, portfolio);
       return next;
     });
-  }, []);
+  }, [getStorageKey, currentUser, syncProfile, portfolio]);
 
   const isIosAndNotStandalone = useMemo(() => {
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -530,14 +574,16 @@ const App: React.FC = () => {
     };
     const newPortfolio = [...portfolio, newItem];
     setPortfolio(newPortfolio);
-    localStorage.setItem('stkr_portfolio_v1', JSON.stringify(newPortfolio));
+    localStorage.setItem(getStorageKey('portfolio_v1'), JSON.stringify(newPortfolio));
+    if (currentUser) syncProfile(currentUser, favorites, newPortfolio);
     refreshPortfolioPrices(newPortfolio);
   };
 
   const handleRemovePortfolioItem = (id: string) => {
     const newPortfolio = portfolio.filter(p => p.id !== id);
     setPortfolio(newPortfolio);
-    localStorage.setItem('stkr_portfolio_v1', JSON.stringify(newPortfolio));
+    localStorage.setItem(getStorageKey('portfolio_v1'), JSON.stringify(newPortfolio));
+    if (currentUser) syncProfile(currentUser, favorites, newPortfolio);
   };
 
   const refreshPortfolioPrices = useCallback(async (currentPortfolio: PortfolioItem[]) => {
@@ -659,16 +705,41 @@ const App: React.FC = () => {
   }, [searchTerm, isSearchFocused]);
 
   useEffect(() => {
-    const storedFavs = localStorage.getItem('stkr_favs_v2');
-    if (storedFavs) setFavorites(JSON.parse(storedFavs));
-    
-    const storedPortfolio = localStorage.getItem('stkr_portfolio_v1');
-    if (storedPortfolio) {
-      const parsed = JSON.parse(storedPortfolio);
-      setPortfolio(parsed);
-      refreshPortfolioPrices(parsed);
-    }
+    if (!currentUser) return;
 
+    const loadProfile = async () => {
+      try {
+        const response = await fetch(`/api/user/profile?username=${currentUser}`);
+        if (response.ok) {
+          const data = await response.json();
+          setFavorites(data.favorites);
+          setPortfolio(data.portfolio);
+          refreshPortfolioPrices(data.portfolio);
+          
+          // Also update local storage for offline/fallback
+          localStorage.setItem(getStorageKey('favs_v2'), JSON.stringify(data.favorites));
+          localStorage.setItem(getStorageKey('portfolio_v1'), JSON.stringify(data.portfolio));
+        } else {
+          // Fallback to local storage if server fails
+          const storedFavs = localStorage.getItem(getStorageKey('favs_v2'));
+          if (storedFavs) setFavorites(JSON.parse(storedFavs));
+          else setFavorites([]);
+          
+          const storedPortfolio = localStorage.getItem(getStorageKey('portfolio_v1'));
+          if (storedPortfolio) {
+            const parsed = JSON.parse(storedPortfolio);
+            setPortfolio(parsed);
+            refreshPortfolioPrices(parsed);
+          } else {
+            setPortfolio([]);
+          }
+        }
+      } catch (err) {
+        console.error("Profile load failed:", err);
+      }
+    };
+
+    loadProfile();
     getAnonymousId();
     refreshAlerts();
     
@@ -684,7 +755,7 @@ const App: React.FC = () => {
     }
 
     handleSelectAndSearch('AAPL');
-  }, [handleSelectAndSearch, isIosAndNotStandalone, refreshAlerts]);
+  }, [handleSelectAndSearch, isIosAndNotStandalone, refreshAlerts, currentUser, getStorageKey]);
 
   useEffect(() => {
     if (activeView === 'favorites') {
@@ -713,6 +784,11 @@ const App: React.FC = () => {
       <AnimatedMarketBackground />
       
       <AnimatePresence>
+        {showSplash && <SplashScreen />}
+        {!showSplash && !currentUser && <LoginScreen onLogin={handleLogin} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {selectedSentiment && <SentimentDetailModal ticker={selectedSentiment.ticker} analysis={selectedSentiment.analysis} onClose={() => setSelectedSentiment(null)} />}
         {isAlertModalOpen && stockData && <AlertModal ticker={stockData.info.ticker} currentPrice={stockData.info.currentPrice} onClose={() => setIsAlertModalOpen(false)} onSave={handleSaveAlert} />}
         {isAddTradeModalOpen && <AddTradeModal onClose={() => setIsAddTradeModalOpen(false)} onAdd={handleAddPortfolioItem} />}
@@ -729,6 +805,12 @@ const App: React.FC = () => {
           <WatchlistPulseModal
             stocks={favoriteStocksDetails}
             onClose={() => setIsPulseModalOpen(false)}
+          />
+        )}
+        {isAdminModalOpen && currentUser === 'admin' && (
+          <AdminPanelModal 
+            adminUsername={currentUser} 
+            onClose={() => setIsAdminModalOpen(false)} 
           />
         )}
       </AnimatePresence>
@@ -770,23 +852,25 @@ const App: React.FC = () => {
           <button onClick={() => setActiveView('trade')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'trade' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Briefcase size={20} /></button>
           <button onClick={() => setActiveView('favorites')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'favorites' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Heart size={20} /></button>
           <button onClick={() => setActiveView('alerts')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'alerts' ? 'bg-white/15 text-yellow-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><BellRing size={20} /></button>
+          {currentUser === 'admin' && (
+            <button onClick={() => setIsAdminModalOpen(true)} className="w-full flex items-center justify-center p-3.5 rounded-2xl transition-all text-pink-500 hover:bg-pink-500/10 border border-transparent hover:border-pink-500/20 shadow-md"><Shield size={20} strokeWidth={2.5} /></button>
+          )}
         </nav>
-        <div className="p-4 mb-2 flex justify-center">
-          <button onClick={() => setIsModelSettingsOpen(true)} className="p-2 text-white/20 hover:text-white transition-all"><Settings size={18} /></button>
+        <div className="p-4 mb-2 flex flex-col items-center gap-4">
         </div>
       </aside>
 
       <main className="flex-1 h-full overflow-y-auto custom-scrollbar pb-32 md:pb-6 p-3 md:p-6 relative z-10 bg-black/10">
         <div className="max-w-6xl mx-auto space-y-2.5">
           <header className="flex flex-col sm:flex-row items-center justify-between gap-2.5">
-            {activeView === 'dashboard' && (
-              <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-1">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                    className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.8)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-60"
-                  />
-                  <div className="relative flex items-center gap-4 px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10">
+            <div className="relative p-[1.5px] rounded-xl overflow-hidden w-full mb-1">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                  className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.8)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-60"
+                />
+                <div className="relative flex items-center justify-between gap-4 px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10">
+                  <div className="flex items-center gap-4">
                     <motion.button 
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
@@ -797,11 +881,18 @@ const App: React.FC = () => {
                     </motion.button>
                     <div className="flex flex-col">
                        <h1 className="text-sm font-black text-white uppercase tracking-[0.3em] leading-tight">Stocker</h1>
-                       <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.4em]">Professional Analytics</span>
+                       <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.4em]">{currentUser}'s Terminal</span>
                     </div>
                   </div>
-              </div>
-            )}
+                  <button 
+                    onClick={handleLogout} 
+                    className="p-2 text-rose-500/60 hover:text-rose-500 transition-all hover:bg-rose-500/10 rounded-lg border border-rose-500/20"
+                    title="Logout Session"
+                  >
+                    <ZapOff size={16} />
+                  </button>
+                </div>
+            </div>
             {activeView === 'dashboard' && (
               <div className="w-full max-sm relative group" onFocus={() => setIsSearchFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsSearchFocused(false); }}>
                 <form className="relative" onSubmit={(e) => { e.preventDefault(); handleSelectAndSearch(searchResults.length > 0 ? searchResults[0].symbol : searchTerm); }}>
@@ -1056,6 +1147,9 @@ const App: React.FC = () => {
         <button onClick={() => setActiveView('trade')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'trade' ? 'text-pink-500' : 'text-white/40'}`}><Briefcase size={18} strokeWidth={activeView === 'trade' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Trade</span></button>
         <button onClick={() => setActiveView('favorites')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'favorites' ? 'text-pink-500' : 'text-white/40'}`}><Heart size={18} strokeWidth={activeView === 'favorites' ? 3 : 2} fill={activeView === 'favorites' ? 'currentColor' : 'none'} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Watch</span></button>
         <button onClick={() => setActiveView('alerts')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'alerts' ? 'text-yellow-500' : 'text-white/40'}`}><BellRing size={18} strokeWidth={activeView === 'alerts' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Alerts</span></button>
+        {currentUser === 'admin' && (
+          <button onClick={() => setIsAdminModalOpen(true)} className="flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all text-pink-500"><Shield size={18} strokeWidth={3} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Admin</span></button>
+        )}
       </nav>
     </div>
   );

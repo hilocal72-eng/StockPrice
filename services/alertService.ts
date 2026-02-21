@@ -59,14 +59,14 @@ export const getAnonymousId = (): string => {
   return id;
 };
 
-export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean> => {
-  const anonId = getAnonymousId();
+export const createAlert = async (alert: Omit<Alert, 'status'>, customUserId?: string): Promise<boolean> => {
+  const userId = customUserId || getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(anonId)}`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(userId)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-User-ID': anonId,
+        'X-User-ID': userId,
       },
       body: JSON.stringify({
         ticker: alert.ticker,
@@ -81,12 +81,12 @@ export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean
   }
 };
 
-export const fetchUserAlerts = async (): Promise<Alert[]> => {
-  const anonId = getAnonymousId();
+export const fetchUserAlerts = async (customUserId?: string): Promise<Alert[]> => {
+  const userId = customUserId || getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(anonId)}`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(userId)}`, {
       method: 'GET',
-      headers: { 'X-User-ID': anonId }
+      headers: { 'X-User-ID': userId }
     });
     if (!response.ok) return [];
     const data = await response.json();
@@ -96,12 +96,12 @@ export const fetchUserAlerts = async (): Promise<Alert[]> => {
   }
 };
 
-export const deleteAlert = async (id: number): Promise<boolean> => {
-  const anonId = getAnonymousId();
+export const deleteAlert = async (id: number, customUserId?: string): Promise<boolean> => {
+  const userId = customUserId || getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/${id}?userId=${encodeURIComponent(anonId)}`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/${id}?userId=${encodeURIComponent(userId)}`, {
       method: 'DELETE',
-      headers: { 'X-User-ID': anonId },
+      headers: { 'X-User-ID': userId },
     });
     return response.ok;
   } catch (error) {
@@ -109,12 +109,12 @@ export const deleteAlert = async (id: number): Promise<boolean> => {
   }
 };
 
-export const saveSubscription = async (subscription: PushSubscription): Promise<boolean> => {
-  const anonId = getAnonymousId();
+export const saveSubscription = async (subscription: PushSubscription, customUserId?: string): Promise<boolean> => {
+  const userId = customUserId || getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/subscribe?userId=${encodeURIComponent(anonId)}`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/subscribe?userId=${encodeURIComponent(userId)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-User-ID': anonId },
+      headers: { 'Content-Type': 'application/json', 'X-User-ID': userId },
       body: JSON.stringify(subscription.toJSON()),
     });
     return response.ok;
@@ -124,12 +124,12 @@ export const saveSubscription = async (subscription: PushSubscription): Promise<
   }
 };
 
-export const removeSubscription = async (endpoint: string): Promise<boolean> => {
-  const anonId = getAnonymousId();
+export const removeSubscription = async (endpoint: string, customUserId?: string): Promise<boolean> => {
+  const userId = customUserId || getAnonymousId();
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/unsubscribe?userId=${encodeURIComponent(anonId)}`, {
+    const response = await fetch(`${ALERT_WORKER_URL}/unsubscribe?userId=${encodeURIComponent(userId)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-User-ID': anonId },
+      headers: { 'Content-Type': 'application/json', 'X-User-ID': userId },
       body: JSON.stringify({ endpoint }),
     });
     return response.ok;

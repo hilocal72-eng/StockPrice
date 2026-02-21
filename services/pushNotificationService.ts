@@ -35,7 +35,7 @@ export const getPushSubscription = async (): Promise<PushSubscription | null> =>
   return await registration.pushManager.getSubscription();
 };
 
-export const subscribeUser = async (): Promise<boolean> => {
+export const subscribeUser = async (customUserId?: string): Promise<boolean> => {
   if (!isPushSupported()) return false;
 
   try {
@@ -57,19 +57,19 @@ export const subscribeUser = async (): Promise<boolean> => {
     });
 
     console.log('Created fresh subscription:', subscription);
-    return await saveSubscription(subscription);
+    return await saveSubscription(subscription, customUserId);
   } catch (error) {
     console.error('Subscription failed:', error);
     return false;
   }
 };
 
-export const unsubscribeUser = async (): Promise<boolean> => {
+export const unsubscribeUser = async (customUserId?: string): Promise<boolean> => {
   const subscription = await getPushSubscription();
   if (subscription) {
     const endpoint = subscription.endpoint;
     const success = await subscription.unsubscribe();
-    if (success) await removeSubscription(endpoint);
+    if (success) await removeSubscription(endpoint, customUserId);
     return success;
   }
   return true;

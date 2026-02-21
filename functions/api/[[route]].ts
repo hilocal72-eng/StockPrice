@@ -154,6 +154,34 @@ app.delete('/alerts/:id', async (c) => {
   }
 });
 
+// Push Subscription Endpoints
+app.post('/push/subscribe', async (c) => {
+  const { username, subscription } = await c.req.json();
+  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+  const user = await userStmt.bind(username.toLowerCase()).first<{ id: number }>();
+
+  if (!user) return c.json({ error: 'User not found' }, 404);
+
+  try {
+    const stmt = c.env.DB.prepare('INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)');
+    await stmt.bind(user.id, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth).run();
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: 'Failed to save subscription' }, 500);
+  }
+});
+
+app.post('/push/unsubscribe', async (c) => {
+  const { endpoint } = await c.req.json();
+  try {
+    const stmt = c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?');
+    await stmt.bind(endpoint).run();
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: 'Failed to unsubscribe' }, 500);
+  }
+});
+
 // Admin Endpoints
 app.get('/admin/users', async (c) => {
   const requester = c.req.query('requester');

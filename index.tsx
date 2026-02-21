@@ -7,7 +7,7 @@ if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
   window.addEventListener('load', () => {
     // Simple relative registration is often the most compatible for framed environments.
     // The browser handles resolving this against the frame's origin.
-    navigator.serviceWorker.register('./worker.js')
+    navigator.serviceWorker.register('./sw.js')
       .then(registration => {
         console.log('SW registered successfully with scope:', registration.scope);
         

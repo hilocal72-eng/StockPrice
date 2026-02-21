@@ -661,10 +661,20 @@ const App: React.FC = () => {
     if (!stockData) return false;
     setError(null);
     try {
-      const subSuccess = await handleEnsureSubscription();
+      // Try to subscribe, but don't block alert creation forever
+      let subSuccess = false;
+      try {
+        const subPromise = handleEnsureSubscription();
+        const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000));
+        subSuccess = await Promise.race([subPromise, timeoutPromise]);
+      } catch (e) {
+        console.warn("Subscription check failed:", e);
+      }
+
       if (!subSuccess && !isPushSubscribed) {
         console.warn("Saving alert without an active push subscription.");
       }
+      
       const success = await createAlert({
         ticker: stockData.info.ticker,
         target_price: price,
@@ -675,7 +685,7 @@ const App: React.FC = () => {
         setIsAlertModalOpen(false);
         return true;
       } else {
-        setError("Unable to save alert. Check Worker status.");
+        setError("Unable to save alert. Check connection.");
         return false;
       }
     } catch (err) {

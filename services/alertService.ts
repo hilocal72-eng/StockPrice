@@ -1,8 +1,8 @@
 
 import { Alert } from '../types.ts';
 
-// Cloudflare Worker URL
-const ALERT_WORKER_URL = 'https://stocker-api.hilocal72.workers.dev';
+// Local API URL
+const ALERT_API_URL = '/api';
 
 const generateFallbackUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -59,16 +59,18 @@ export const getAnonymousId = (): string => {
   return id;
 };
 
-export const createAlert = async (alert: Omit<Alert, 'status'>, customUserId?: string): Promise<boolean> => {
-  const userId = customUserId || getAnonymousId();
+export const createAlert = async (alert: Omit<Alert, 'status'>): Promise<boolean> => {
+  const currentUser = localStorage.getItem('stkr_current_user');
+  if (!currentUser) return false;
+
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${ALERT_API_URL}/alerts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-User-ID': userId,
       },
       body: JSON.stringify({
+        username: currentUser,
         ticker: alert.ticker,
         target_price: Number(alert.target_price),
         condition: alert.condition
@@ -81,12 +83,13 @@ export const createAlert = async (alert: Omit<Alert, 'status'>, customUserId?: s
   }
 };
 
-export const fetchUserAlerts = async (customUserId?: string): Promise<Alert[]> => {
-  const userId = customUserId || getAnonymousId();
+export const fetchUserAlerts = async (): Promise<Alert[]> => {
+  const currentUser = localStorage.getItem('stkr_current_user');
+  if (!currentUser) return [];
+
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${ALERT_API_URL}/alerts?username=${encodeURIComponent(currentUser)}`, {
       method: 'GET',
-      headers: { 'X-User-ID': userId }
     });
     if (!response.ok) return [];
     const data = await response.json();
@@ -96,12 +99,13 @@ export const fetchUserAlerts = async (customUserId?: string): Promise<Alert[]> =
   }
 };
 
-export const deleteAlert = async (id: number, customUserId?: string): Promise<boolean> => {
-  const userId = customUserId || getAnonymousId();
+export const deleteAlert = async (id: number): Promise<boolean> => {
+  const currentUser = localStorage.getItem('stkr_current_user');
+  if (!currentUser) return false;
+
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/${id}?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${ALERT_API_URL}/alerts/${id}?username=${encodeURIComponent(currentUser)}`, {
       method: 'DELETE',
-      headers: { 'X-User-ID': userId },
     });
     return response.ok;
   } catch (error) {
@@ -109,13 +113,18 @@ export const deleteAlert = async (id: number, customUserId?: string): Promise<bo
   }
 };
 
-export const saveSubscription = async (subscription: PushSubscription, customUserId?: string): Promise<boolean> => {
-  const userId = customUserId || getAnonymousId();
+export const saveSubscription = async (subscription: PushSubscription): Promise<boolean> => {
+  const currentUser = localStorage.getItem('stkr_current_user');
+  if (!currentUser) return false;
+
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/subscribe?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${ALERT_API_URL}/push/subscribe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-User-ID': userId },
-      body: JSON.stringify(subscription.toJSON()),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: currentUser,
+        subscription: subscription.toJSON()
+      }),
     });
     return response.ok;
   } catch (error) {
@@ -124,12 +133,11 @@ export const saveSubscription = async (subscription: PushSubscription, customUse
   }
 };
 
-export const removeSubscription = async (endpoint: string, customUserId?: string): Promise<boolean> => {
-  const userId = customUserId || getAnonymousId();
+export const removeSubscription = async (endpoint: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${ALERT_WORKER_URL}/unsubscribe?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${ALERT_API_URL}/push/unsubscribe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-User-ID': userId },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint }),
     });
     return response.ok;

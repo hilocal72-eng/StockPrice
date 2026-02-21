@@ -31,16 +31,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         body: JSON.stringify({ username: username.trim().toLowerCase() })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({ error: "Invalid server response" }));
 
       if (response.ok) {
         onLogin(data.username);
       } else {
-        setError(data.error || "Authentication failed");
+        setError(data.error || `Error ${response.status}`);
         setTimeout(() => setError(null), 3000);
       }
     } catch (err) {
-      setError("Server connection failed");
+      setError("Network error or server unreachable");
       setTimeout(() => setError(null), 3000);
     } finally {
       setIsLoading(false);

@@ -1,8 +1,8 @@
 
 import { saveSubscription, removeSubscription } from './alertService.ts';
 
-// VAPID Public Key - This must match the one used by your Worker to sign pushes
-const VAPID_PUBLIC_KEY = 'BIWQGXCmVRphj00cH4uoTto6aftOEbDiE3Q50aV2kTG22yA98mptczFsY8ztWsa3s0kR9Acx8YjgUpwALTjcLHo';
+// VAPID Public Key - This must match the one used by your Server to sign pushes
+const VAPID_PUBLIC_KEY = 'BF4IGtj7crhYY7soDeugjInerPdrAGUzUNiSXuNDSI_TW7C52PPOZKmRqt3UyatsFIkG2vK-8MI-aCuTAUIHH94';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -35,7 +35,7 @@ export const getPushSubscription = async (): Promise<PushSubscription | null> =>
   return await registration.pushManager.getSubscription();
 };
 
-export const subscribeUser = async (customUserId?: string): Promise<boolean> => {
+export const subscribeUser = async (): Promise<boolean> => {
   if (!isPushSupported()) return false;
 
   try {
@@ -57,19 +57,19 @@ export const subscribeUser = async (customUserId?: string): Promise<boolean> => 
     });
 
     console.log('Created fresh subscription:', subscription);
-    return await saveSubscription(subscription, customUserId);
+    return await saveSubscription(subscription);
   } catch (error) {
     console.error('Subscription failed:', error);
     return false;
   }
 };
 
-export const unsubscribeUser = async (customUserId?: string): Promise<boolean> => {
+export const unsubscribeUser = async (): Promise<boolean> => {
   const subscription = await getPushSubscription();
   if (subscription) {
     const endpoint = subscription.endpoint;
     const success = await subscription.unsubscribe();
-    if (success) await removeSubscription(endpoint, customUserId);
+    if (success) await removeSubscription(endpoint);
     return success;
   }
   return true;

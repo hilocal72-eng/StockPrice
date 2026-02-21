@@ -7,7 +7,7 @@
 
 export default {
   /**
-   * @param {Request} request
+   ** @param {Request} request
    * @param {any} env
    */
   async fetch(request, env) {

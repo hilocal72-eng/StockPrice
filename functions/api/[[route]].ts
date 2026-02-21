@@ -189,7 +189,9 @@ async function sendWebPush(endpoint: string, payloadData: any) {
     const priv = 'iBfKC94k67XIn0svr-7zAijB8TvLQGQ4sXnXf1XtZUU';
     
     // Decode base64url public key to extract X and Y coordinates for JWK
-    const raw = atob((pub + '==').replace(/-/g, '+').replace(/_/g, '/'));
+    const padding = '='.repeat((4 - (pub.length % 4)) % 4);
+    const base64 = (pub + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
     const x = btoa(raw.substring(1, 33)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const y = btoa(raw.substring(33, 65)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     

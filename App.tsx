@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import OneSignal from 'react-onesignal';
 import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
@@ -11,7 +12,6 @@ import LoginScreen from './components/LoginScreen.tsx';
 import SplashScreen from './components/SplashScreen.tsx';
 import AdminPanelModal from './components/AdminPanelModal.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
-import { isPushSupported, getNotificationPermission, requestNotificationPermission, subscribeUser, unsubscribeUser, getPushSubscription } from './services/pushNotificationService.ts';
 
 type View = 'dashboard' | 'favorites' | 'alerts' | 'trade';
 type Timeframe = '15m' | '1D';
@@ -461,12 +461,33 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    const initOneSignal = async () => {
+      try {
+        await OneSignal.init({
+          appId: "10b11bf1-fcf6-44a9-abc8-2ec961abdf40",
+          allowLocalhostAsSecureOrigin: true,
+          serviceWorkerPath: 'OneSignalSDKWorker.js'
+        });
+        
+        if (currentUser) {
+          await OneSignal.login(currentUser);
+        }
+      } catch (e) {
+        console.error("OneSignal init failed:", e);
+      }
+    };
+    initOneSignal();
+  }, [currentUser]);
+
   const handleLogin = (username: string) => {
     setCurrentUser(username);
     localStorage.setItem('stkr_current_user', username);
+    OneSignal.login(username).catch(console.error);
   };
 
   const handleLogout = () => {
+    OneSignal.logout().catch(console.error);
     setCurrentUser(null);
     localStorage.removeItem('stkr_current_user');
     setFavorites([]);
@@ -624,36 +645,14 @@ const App: React.FC = () => {
   }, [userAlerts, activeView, refreshAlerts]);
 
   const handleEnsureSubscription = async () => {
-    if (!isPushSupported()) {
-      setError("Push Manager is not supported on this device/browser.");
-      return false;
-    }
-
-    if (isIosAndNotStandalone) {
-      setError("iOS Alert Setup: Please 'Add to Home Screen' using the Share button to enable push notifications.");
-      return false;
-    }
-    
-    setIsPushLoading(true);
-    setError(null);
     try {
-      const permission = getNotificationPermission();
-      if (permission === 'default') {
-        const result = await requestNotificationPermission();
-        setPushStatus(result);
-        if (result !== 'granted') return false;
-      } else if (permission === 'denied') {
-        setError("Notifications blocked. Please reset site permissions in your browser settings.");
-        return false;
+      if (!OneSignal.Notifications.permission) {
+        await OneSignal.Notifications.requestPermission();
       }
-      const success = await subscribeUser();
-      setIsPushSubscribed(success);
-      return success;
+      return OneSignal.Notifications.permission;
     } catch (e) {
-      setError("Handshake Error: Failed to secure push token.");
+      setError("Notification permission request failed.");
       return false;
-    } finally {
-      setIsPushLoading(false);
     }
   };
 
@@ -661,19 +660,8 @@ const App: React.FC = () => {
     if (!stockData) return false;
     setError(null);
     try {
-      // Try to subscribe, but don't block alert creation forever
-      let subSuccess = false;
-      try {
-        const subPromise = handleEnsureSubscription();
-        const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000));
-        subSuccess = await Promise.race([subPromise, timeoutPromise]);
-      } catch (e) {
-        console.warn("Subscription check failed:", e);
-      }
-
-      if (!subSuccess && !isPushSubscribed) {
-        console.warn("Saving alert without an active push subscription.");
-      }
+      // Ensure OneSignal is ready
+      await handleEnsureSubscription();
       
       const success = await createAlert({
         ticker: stockData.info.ticker,
@@ -753,17 +741,6 @@ const App: React.FC = () => {
     getAnonymousId();
     refreshAlerts();
     
-    if (isPushSupported()) {
-      const perm = getNotificationPermission();
-      setPushStatus(perm);
-      getPushSubscription().then(sub => {
-        setIsPushSubscribed(!!sub);
-        if (perm === 'granted' && !sub && !isIosAndNotStandalone) {
-          subscribeUser().then(success => setIsPushSubscribed(success));
-        }
-      });
-    }
-
     handleSelectAndSearch('AAPL');
   }, [handleSelectAndSearch, isIosAndNotStandalone, refreshAlerts, currentUser, getStorageKey]);
 

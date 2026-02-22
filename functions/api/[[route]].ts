@@ -3,7 +3,7 @@ import { handle } from 'hono/cloudflare-pages';
 import { cors } from 'hono/cors';
 
 type Bindings = {
-  DB: D1Database;
+  DB: any;
 };
 
 const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
@@ -80,7 +80,7 @@ app.get('/user/profile', async (c) => {
   if (!username) return c.json({ error: 'Missing username' }, 400);
 
   const stmt = c.env.DB.prepare('SELECT favorites, portfolio FROM users WHERE username = ?');
-  const user = await stmt.bind(username.toLowerCase()).first<{ favorites: string; portfolio: string }>();
+  const user = await stmt.bind(username.toLowerCase()).first() as { favorites: string; portfolio: string };
 
   if (user) {
     return c.json({
@@ -110,7 +110,7 @@ app.get('/alerts', async (c) => {
   if (!username) return c.json({ error: 'Missing username' }, 400);
 
   const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
-  const user = await userStmt.bind(username.toLowerCase()).first<{ id: number }>();
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
 
   if (!user) return c.json({ error: 'User not found' }, 404);
 
@@ -122,7 +122,7 @@ app.get('/alerts', async (c) => {
 app.post('/alerts', async (c) => {
   const { username, ticker, target_price, condition } = await c.req.json();
   const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
-  const user = await userStmt.bind(username.toLowerCase()).first<{ id: number }>();
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
 
   if (!user) return c.json({ error: 'User not found' }, 404);
 
@@ -141,7 +141,7 @@ app.delete('/alerts/:id', async (c) => {
   if (!username) return c.json({ error: 'Missing username' }, 400);
   
   const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
-  const user = await userStmt.bind(username.toLowerCase()).first<{ id: number }>();
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
 
   if (!user) return c.json({ error: 'User not found' }, 404);
 
@@ -154,90 +154,33 @@ app.delete('/alerts/:id', async (c) => {
   }
 });
 
-// Push Subscription Endpoints
-app.post('/push/subscribe', async (c) => {
-  const { username, subscription } = await c.req.json();
-  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
-  const user = await userStmt.bind(username.toLowerCase()).first<{ id: number }>();
+// OneSignal handles subscriptions directly on the client and targets by external_id
 
-  if (!user) return c.json({ error: 'User not found' }, 404);
+// --- OneSignal Push Helper ---
+async function sendOneSignalPush(username: string, ticker: string, targetPrice: number, currentPrice: number) {
+  const APP_ID = "10b11bf1-fcf6-44a9-abc8-2ec961abdf40";
+  const API_KEY = "os_v2_app_xywi7ap3lvbzrcpa7ivb5sf67jgkwuyn7veu4rfmr3exgp5wtmfyxya4rburhu3oc7b6ort4bomco2o3feytedffsmnpvxruvmym5ua";
 
   try {
-    const stmt = c.env.DB.prepare('INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)');
-    await stmt.bind(user.id, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth).run();
-    return c.json({ success: true });
-  } catch (err) {
-    return c.json({ error: 'Failed to save subscription' }, 500);
-  }
-});
-
-app.post('/push/unsubscribe', async (c) => {
-  const { endpoint } = await c.req.json();
-  try {
-    const stmt = c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?');
-    await stmt.bind(endpoint).run();
-    return c.json({ success: true });
-  } catch (err) {
-    return c.json({ error: 'Failed to unsubscribe' }, 500);
-  }
-});
-
-// --- Web Push Helper (Cloudflare Workers Web Crypto Implementation) ---
-async function sendWebPush(endpoint: string, payloadData: any, p256dh: string, auth: string, db: D1Database) {
-  try {
-    const pub = 'BF4IGtj7crhYY7soDeugjInerPdrAGUzUNiSXuNDSI_TW7C52PPOZKmRqt3UyatsFIkG2vK-8MI-aCuTAUIHH94';
-    const priv = 'iBfKC94k67XIn0svr-7zAijB8TvLQGQ4sXnXf1XtZUU';
-    
-    // Decode base64url public key to extract X and Y coordinates for JWK
-    const padding = '='.repeat((4 - (pub.length % 4)) % 4);
-    const base64 = (pub + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const raw = atob(base64);
-    const x = btoa(raw.substring(1, 33)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const y = btoa(raw.substring(33, 65)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    
-    const jwk = { kty: 'EC', crv: 'P-256', d: priv, x, y, ext: true };
-    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
-    
-    const url = new URL(endpoint);
-    const aud = `${url.protocol}//${url.host}`;
-    const exp = Math.floor(Date.now() / 1000) + 12 * 60 * 60;
-    
-    const header = { typ: 'JWT', alg: 'ES256' };
-    const payload = { aud, exp, sub: 'mailto:admin@stocker.app' };
-    
-    const encodeBase64Url = (str: string) => btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const encodeBuffer = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    
-    const unsignedToken = `${encodeBase64Url(JSON.stringify(header))}.${encodeBase64Url(JSON.stringify(payload))}`;
-    const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsignedToken));
-    const jwt = `${unsignedToken}.${encodeBuffer(signature)}`;
-    
-    console.log(`Sending push to ${endpoint}...`);
-    
-    // We are sending a simple push without encryption for now, 
-    // relying on the Service Worker to show a generic message if payload is missing.
-    // Full ECE encryption in Cloudflare Workers requires a complex library.
-    const pushResponse = await fetch(endpoint, {
-      method: 'POST',
+    const response = await fetch("https://onesignal.com/api/v1/notifications", {
+      method: "POST",
       headers: {
-        'Authorization': `vapid t=${jwt}, k=${pub}`,
-        'TTL': '43200'
-      }
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": `Basic ${API_KEY}`
+      },
+      body: JSON.stringify({
+        app_id: APP_ID,
+        headings: { "en": `${ticker} Alert Triggered!` },
+        contents: { "en": `Price crossed ${targetPrice}. Current: ${currentPrice.toFixed(2)}` },
+        include_external_user_ids: [username],
+        url: `https://stockprice-1mo.pages.dev/alerts`
+      })
     });
-    
-    console.log(`Push response status: ${pushResponse.status}`);
-    if (!pushResponse.ok) {
-        const text = await pushResponse.text();
-        console.error(`Push failed with body: ${text}`);
-        
-        // If the subscription is expired or invalid, delete it from the database
-        if (pushResponse.status === 410 || pushResponse.status === 404) {
-            await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run();
-            console.log(`Deleted stale subscription: ${endpoint}`);
-        }
-    }
+
+    const result = await response.json();
+    console.log('OneSignal response:', result);
   } catch (e) {
-    console.error('Push failed:', e);
+    console.error('OneSignal push failed:', e);
   }
 }
 
@@ -276,21 +219,10 @@ app.get('/cron/check', async (c) => {
 
           if (triggered) {
             await c.env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ?").bind(alert.id).run();
-            const subs = await c.env.DB.prepare("SELECT * FROM push_subscriptions WHERE user_id = ?").bind(alert.user_id).all();
             
-            for (const sub of subs.results) {
-              await sendWebPush(
-                sub.endpoint as string, 
-                {
-                  title: `${alert.ticker} Alert Triggered!`,
-                  body: `Price crossed ${alert.target_price}. Current: ${currentPrice.toFixed(2)}`,
-                  url: '/alerts'
-                },
-                sub.p256dh as string,
-                sub.auth as string,
-                c.env.DB
-              );
-            }
+            // Send OneSignal Push using the username (external_id)
+            await sendOneSignalPush(alert.username, alert.ticker, alert.target_price, currentPrice);
+            
             triggeredCount++;
           }
         }

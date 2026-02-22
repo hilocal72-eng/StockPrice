@@ -112,36 +112,3 @@ export const deleteAlert = async (id: number): Promise<boolean> => {
     return false;
   }
 };
-
-export const saveSubscription = async (subscription: PushSubscription): Promise<boolean> => {
-  const currentUser = localStorage.getItem('stkr_current_user');
-  if (!currentUser) return false;
-
-  try {
-    const response = await fetch(`${ALERT_API_URL}/push/subscribe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: currentUser,
-        subscription: subscription.toJSON()
-      }),
-    });
-    return response.ok;
-  } catch (error) {
-    console.error('Save subscription error:', error);
-    return false;
-  }
-};
-
-export const removeSubscription = async (endpoint: string): Promise<boolean> => {
-  try {
-    const response = await fetch(`${ALERT_API_URL}/push/unsubscribe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint }),
-    });
-    return response.ok;
-  } catch (error) {
-    return false;
-  }
-};

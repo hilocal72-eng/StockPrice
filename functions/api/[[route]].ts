@@ -4,6 +4,8 @@ import { cors } from 'hono/cors';
 
 type Bindings = {
   DB: any;
+  ONESIGNAL_APP_ID: string;
+  ONESIGNAL_API_KEY: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
@@ -157,9 +159,14 @@ app.delete('/alerts/:id', async (c) => {
 // OneSignal handles subscriptions directly on the client and targets by external_id
 
 // --- OneSignal Push Helper ---
-async function sendOneSignalPush(username: string, ticker: string, targetPrice: number, currentPrice: number) {
-  const APP_ID = "10b11bf1-fcf6-44a9-abc8-2ec961abdf40";
-  const API_KEY = "os_v2_app_xywi7ap3lvbzrcpa7ivb5sf67jgkwuyn7veu4rfmr3exgp5wtmfyxya4rburhu3oc7b6ort4bomco2o3feytedffsmnpvxruvmym5ua";
+async function sendOneSignalPush(username: string, ticker: string, targetPrice: number, currentPrice: number, env: Bindings) {
+  const APP_ID = env.ONESIGNAL_APP_ID || "10b11bf1-fcf6-44a9-abc8-2ec961abdf40";
+  const API_KEY = env.ONESIGNAL_API_KEY;
+
+  if (!API_KEY) {
+    console.error('OneSignal API Key is missing');
+    return;
+  }
 
   try {
     const response = await fetch("https://onesignal.com/api/v1/notifications", {
@@ -221,7 +228,7 @@ app.get('/cron/check', async (c) => {
             await c.env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ?").bind(alert.id).run();
             
             // Send OneSignal Push using the username (external_id)
-            await sendOneSignalPush(alert.username, alert.ticker, alert.target_price, currentPrice);
+            await sendOneSignalPush(alert.username, alert.ticker, alert.target_price, currentPrice, c.env);
             
             triggeredCount++;
           }

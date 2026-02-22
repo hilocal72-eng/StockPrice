@@ -464,8 +464,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const initOneSignal = async () => {
       try {
+        const appId = (import.meta as any).env.VITE_ONESIGNAL_APP_ID || "10b11bf1-fcf6-44a9-abc8-2ec961abdf40";
         await OneSignal.init({
-          appId: "10b11bf1-fcf6-44a9-abc8-2ec961abdf40",
+          appId: appId,
           allowLocalhostAsSecureOrigin: true,
           serviceWorkerPath: 'OneSignalSDKWorker.js'
         });

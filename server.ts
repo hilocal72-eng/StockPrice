@@ -2,7 +2,6 @@ import express from "express";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
-import webpush from "web-push";
 import cors from "cors";
 import fs from "fs";
 
@@ -20,21 +19,6 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const db = new Database(path.join(__dirname, "stocker.db"));
-
-// VAPID Keys
-const VAPID_PUBLIC_KEY = "BF4IGtj7crhYY7soDeugjInerPdrAGUzUNiSXuNDSI_TW7C52PPOZKmRqt3UyatsFIkG2vK-8MI-aCuTAUIHH94";
-const VAPID_PRIVATE_KEY = "iBfKC94k67XIn0svr-7zAijB8TvLQGQ4sXnXf1XtZUU";
-
-try {
-  webpush.setVapidDetails(
-    "mailto:admin@stocker.app",
-    VAPID_PUBLIC_KEY,
-    VAPID_PRIVATE_KEY
-  );
-  console.log("VAPID details set successfully");
-} catch (err) {
-  console.error("Failed to set VAPID details:", err);
-}
 
 // Initialize database
 console.log("Initializing database...");
@@ -54,15 +38,6 @@ db.exec(`
     condition TEXT NOT NULL,
     status TEXT DEFAULT 'active',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS push_subscriptions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    endpoint TEXT UNIQUE NOT NULL,
-    p256dh TEXT NOT NULL,
-    auth TEXT NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
 `);
@@ -233,34 +208,6 @@ async function startServer() {
     }
   });
 
-  // Push Subscription Endpoints
-  app.post("/api/push/subscribe", (req, res) => {
-    const { username, subscription } = req.body;
-    const userStmt = db.prepare("SELECT id FROM users WHERE username = ?");
-    const user = userStmt.get(username.toLowerCase()) as { id: number } | undefined;
-
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    try {
-      const stmt = db.prepare("INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)");
-      stmt.run(user.id, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth);
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to save subscription" });
-    }
-  });
-
-  app.post("/api/push/unsubscribe", (req, res) => {
-    const { endpoint } = req.body;
-    try {
-      const stmt = db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?");
-      stmt.run(endpoint);
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to unsubscribe" });
-    }
-  });
-
   // Admin Endpoints
   app.get("/api/admin/users", (req, res) => {
     const requester = req.query.requester as string;
@@ -288,6 +235,39 @@ async function startServer() {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
   });
 
+// --- OneSignal Push Helper ---
+async function sendOneSignalPush(username: string, ticker: string, targetPrice: number, currentPrice: number) {
+  const APP_ID = process.env.ONESIGNAL_APP_ID || "10b11bf1-fcf6-44a9-abc8-2ec961abdf40";
+  const API_KEY = process.env.ONESIGNAL_API_KEY;
+
+  if (!API_KEY) {
+    console.error('STKR_LOG: OneSignal API Key is missing');
+    return;
+  }
+
+  try {
+    const response = await fetch("https://onesignal.com/api/v1/notifications", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": `Basic ${API_KEY}`
+      },
+      body: JSON.stringify({
+        app_id: APP_ID,
+        headings: { "en": `${ticker} Alert Triggered!` },
+        contents: { "en": `${ticker} has hit your target of $${targetPrice.toFixed(2)} (Current: $${currentPrice.toFixed(2)})` },
+        include_external_user_ids: [username],
+        url: `https://stockprice-1mo.pages.dev/alerts`
+      })
+    });
+
+    const result = await response.json();
+    console.log('STKR_LOG: OneSignal response:', result);
+  } catch (e) {
+    console.error('STKR_LOG: OneSignal push failed:', e);
+  }
+}
+
   // Background Task: Price Checker & Push Sender
   setInterval(async () => {
     const activeAlerts = db.prepare("SELECT a.*, u.username FROM alerts a JOIN users u ON a.user_id = u.id WHERE a.status = 'active'").all() as any[];
@@ -304,29 +284,8 @@ async function startServer() {
         // Update alert status
         db.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ?").run(alert.id);
 
-        // Fetch user subscriptions
-        const subs = db.prepare("SELECT * FROM push_subscriptions WHERE user_id = ?").all(alert.user_id) as any[];
-        
-        const payload = JSON.stringify({
-          title: `STOCKER Alert: ${alert.ticker}`,
-          body: `${alert.ticker} has hit your target of $${alert.target_price.toFixed(2)} (Current: $${mockPrice.toFixed(2)})`,
-          icon: '/icon-192x192.png',
-          data: { ticker: alert.ticker }
-        });
-
-        for (const sub of subs) {
-          try {
-            await webpush.sendNotification({
-              endpoint: sub.endpoint,
-              keys: { p256dh: sub.p256dh, auth: sub.auth }
-            }, payload);
-          } catch (err: any) {
-            if (err.statusCode === 410 || err.statusCode === 404) {
-              // Subscription expired or invalid, remove it
-              db.prepare("DELETE FROM push_subscriptions WHERE id = ?").run(sub.id);
-            }
-          }
-        }
+        // Send OneSignal Push using the username (external_id)
+        await sendOneSignalPush(alert.username, alert.ticker, alert.target_price, mockPrice);
       }
     }
   }, 30000); // Check every 30 seconds

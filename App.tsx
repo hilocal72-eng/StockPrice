@@ -618,6 +618,47 @@ const App: React.FC = () => {
     }
   }, [currentUser, tradingMode]);
 
+  // Global check for Zerodha callback in URL (for environments where popups open in same tab)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const requestToken = urlParams.get('request_token');
+    const status = urlParams.get('status');
+
+    if (status === 'success' && requestToken) {
+      const processToken = async () => {
+        setIsBrokerLoading(true);
+        try {
+          const exchangeRes = await fetch('/api/broker/zerodha/exchange', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: currentUser, requestToken })
+          });
+          
+          const result = await exchangeRes.json();
+          if (result.status === 'success') {
+            fetchBrokerStatus();
+            fetchZerodhaData();
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            alert("Zerodha Connected Successfully!");
+          } else {
+            console.error("Zerodha exchange failed:", result.error);
+            alert(`Connection failed: ${result.error}`);
+          }
+        } catch (err) {
+          console.error("Exchange error:", err);
+          alert("Connection failed: Network or server error.");
+        } finally {
+          setIsBrokerLoading(false);
+        }
+      };
+
+      processToken();
+    }
+  }, [currentUser, fetchBrokerStatus, fetchZerodhaData]);
+
   const handleConnectZerodha = async () => {
     try {
       const res = await fetch('/api/broker/zerodha/auth-url');

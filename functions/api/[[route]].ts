@@ -301,7 +301,8 @@ app.get('/broker/zerodha/callback', async (c) => {
               if (window.opener) {
                 window.opener.postMessage({ type: 'ZERODHA_REQUEST_TOKEN', requestToken: requestToken }, '*');
               } else {
-                document.getElementById('manualSync').style.display = 'block';
+                // If not in a popup, redirect back to the main app with the token in the URL
+                window.location.href = '/?status=success&request_token=' + requestToken;
               }
             }
 

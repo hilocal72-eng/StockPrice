@@ -248,6 +248,14 @@ app.get('/cron/check', async (c) => {
 });
 
 // Broker Endpoints (Zerodha)
+app.get('/broker/zerodha/sw.js', (c) => {
+  // Kill-switch for the old relative Service Worker registration
+  // This tells the browser to unregister the ghost SW and stops the 404 errors
+  return c.text("self.registration.unregister();", 200, {
+    'Content-Type': 'application/javascript'
+  });
+});
+
 app.get('/broker/zerodha/auth-url', async (c) => {
   const apiKey = c.env.ZERODHA_API_KEY;
   if (!apiKey) return c.json({ error: 'Zerodha API Key not configured' }, 500);
@@ -281,6 +289,15 @@ app.get('/broker/zerodha/callback', async (c) => {
             const requestToken = '${requestToken}';
             
             function attemptSync() {
+              // 1. Bulletproof LocalStorage sync (works across tabs/popups on same origin)
+              try {
+                localStorage.setItem('zerodha_request_token', requestToken);
+                localStorage.setItem('zerodha_sync_time', Date.now().toString());
+              } catch(e) {
+                console.error('LocalStorage blocked');
+              }
+
+              // 2. Standard postMessage sync
               if (window.opener) {
                 window.opener.postMessage({ type: 'ZERODHA_REQUEST_TOKEN', requestToken: requestToken }, '*');
               } else {
@@ -317,6 +334,10 @@ app.post('/broker/zerodha/exchange', async (c) => {
   const apiKey = c.env.ZERODHA_API_KEY;
   const apiSecret = c.env.ZERODHA_API_SECRET;
 
+  if (!apiKey || !apiSecret) {
+    return c.json({ error: 'Zerodha API Key or Secret not configured on server' }, 500);
+  }
+
   try {
     const sha256 = async (message: string) => {
       const msgBuffer = new TextEncoder().encode(message);
@@ -341,8 +362,14 @@ app.post('/broker/zerodha/exchange', async (c) => {
     });
 
     const data = await response.json() as any;
+    console.log('Zerodha exchange response:', JSON.stringify(data));
+    
     if (data.status === 'error') {
       return c.json({ error: `Zerodha Error: ${data.message}` }, 400);
+    }
+
+    if (!data.data || !data.data.access_token) {
+      return c.json({ error: 'Invalid response from Zerodha: missing data' }, 500);
     }
 
     const accessToken = data.data.access_token;
@@ -494,14 +521,14 @@ app.get('/broker/status', async (c) => {
         .bind(user.id).first() as { broker: string; updated_at: string };
 
       if (session) {
-        return c.json({ connected: true, broker: session.broker, last_sync: session.updated_at });
+        return c.json({ connected: true, broker: session.broker, last_sync: session.updated_at, user_id: user.id });
       }
+      return c.json({ connected: false, debug: `No session found for user_id ${user.id}` });
     } catch (dbErr: any) {
       // Table likely doesn't exist yet, which is fine
       console.log('Broker sessions table not found or query failed:', dbErr.message);
+      return c.json({ connected: false, debug: 'Broker sessions table missing' });
     }
-    
-    return c.json({ connected: false });
   } catch (err: any) {
     console.error('Status check error:', err);
     return c.json({ connected: false, error: err.message });

@@ -625,36 +625,56 @@ const App: React.FC = () => {
       
       const authWindow = window.open(url, 'zerodha_auth', 'width=600,height=700');
       
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.data?.type === 'ZERODHA_REQUEST_TOKEN') {
-          const { requestToken } = event.data;
+      let isExchanging = false;
+
+      const processToken = async (requestToken: string) => {
+        if (isExchanging) return;
+        isExchanging = true;
+        
+        try {
+          const exchangeRes = await fetch('/api/broker/zerodha/exchange', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: currentUser, requestToken })
+          });
           
-          try {
-            const exchangeRes = await fetch('/api/broker/zerodha/exchange', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ username: currentUser, requestToken })
-            });
-            
-            const result = await exchangeRes.json();
-            if (result.status === 'success') {
-              fetchBrokerStatus();
-              fetchZerodhaData();
-              authWindow?.close();
-            } else {
-              console.error("Zerodha exchange failed:", result.error);
-              alert(`Connection failed: ${result.error}`);
-            }
-          } catch (err) {
-            console.error("Exchange error:", err);
-          } finally {
-            window.removeEventListener('message', handleMessage);
+          const result = await exchangeRes.json();
+          if (result.status === 'success') {
+            fetchBrokerStatus();
+            fetchZerodhaData();
+            authWindow?.close();
+          } else {
+            console.error("Zerodha exchange failed:", result.error);
+            alert(`Connection failed: ${result.error}`);
           }
+        } catch (err) {
+          console.error("Exchange error:", err);
+          alert("Connection failed: Network or server error.");
+        } finally {
+          window.removeEventListener('message', handleMessage);
+          window.removeEventListener('storage', handleStorage);
+          isExchanging = false;
         }
       };
+
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'ZERODHA_REQUEST_TOKEN') {
+          processToken(event.data.requestToken);
+        }
+      };
+
+      const handleStorage = (event: StorageEvent) => {
+        if (event.key === 'zerodha_request_token' && event.newValue) {
+          processToken(event.newValue);
+          localStorage.removeItem('zerodha_request_token');
+        }
+      };
+
       window.addEventListener('message', handleMessage);
+      window.addEventListener('storage', handleStorage);
     } catch (e) {
       console.error("Failed to start Zerodha auth:", e);
+      alert("Failed to initiate connection. Please check your API keys.");
     }
   };
 

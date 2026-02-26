@@ -610,16 +610,33 @@ const App: React.FC = () => {
       const res = await fetch('/api/broker/zerodha/auth-url');
       const { url } = await res.json();
       
-      // Append username to redirect so callback knows who it is
-      const finalUrl = `${url}&username=${encodeURIComponent(currentUser || '')}`;
+      const authWindow = window.open(url, 'zerodha_auth', 'width=600,height=700');
       
-      const authWindow = window.open(finalUrl, 'zerodha_auth', 'width=600,height=700');
-      
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'BROKER_AUTH_SUCCESS') {
-          fetchBrokerStatus();
-          fetchZerodhaData();
-          window.removeEventListener('message', handleMessage);
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.data?.type === 'ZERODHA_REQUEST_TOKEN') {
+          const { requestToken } = event.data;
+          
+          try {
+            const exchangeRes = await fetch('/api/broker/zerodha/exchange', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: currentUser, requestToken })
+            });
+            
+            const result = await exchangeRes.json();
+            if (result.status === 'success') {
+              fetchBrokerStatus();
+              fetchZerodhaData();
+              authWindow?.close();
+            } else {
+              console.error("Zerodha exchange failed:", result.error);
+              alert(`Connection failed: ${result.error}`);
+            }
+          } catch (err) {
+            console.error("Exchange error:", err);
+          } finally {
+            window.removeEventListener('message', handleMessage);
+          }
         }
       };
       window.addEventListener('message', handleMessage);

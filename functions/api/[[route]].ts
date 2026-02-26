@@ -258,17 +258,42 @@ app.get('/broker/zerodha/auth-url', async (c) => {
 
 app.get('/broker/zerodha/callback', async (c) => {
   const requestToken = c.req.query('request_token');
-  const username = c.req.query('username'); // Passed from frontend in redirect
   
-  if (!requestToken || !username) {
-    return c.text('Missing request_token or username');
+  if (!requestToken) {
+    return c.text('Missing request_token');
+  }
+
+  return c.html(`
+    <html>
+      <body style="background: #000; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
+        <div style="text-align: center;">
+          <h2 style="color: #10b981;">Authorizing...</h2>
+          <p>Syncing with terminal...</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'ZERODHA_REQUEST_TOKEN', requestToken: '${requestToken}' }, '*');
+              // The main window will handle the exchange and close this popup
+            } else {
+              document.body.innerHTML = '<h2 style="color: #ef4444;">Error: Opener window not found</h2>';
+            }
+          </script>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+app.post('/broker/zerodha/exchange', async (c) => {
+  const { username, requestToken } = await c.req.json();
+  
+  if (!username || !requestToken) {
+    return c.json({ error: 'Missing username or requestToken' }, 400);
   }
 
   const apiKey = c.env.ZERODHA_API_KEY;
   const apiSecret = c.env.ZERODHA_API_SECRET;
 
   try {
-    // Exchange request_token for access_token
     const sha256 = async (message: string) => {
       const msgBuffer = new TextEncoder().encode(message);
       const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -293,13 +318,12 @@ app.get('/broker/zerodha/callback', async (c) => {
 
     const data = await response.json() as any;
     if (data.status === 'error') {
-      return c.text(`Zerodha Error: ${data.message}`);
+      return c.json({ error: `Zerodha Error: ${data.message}` }, 400);
     }
 
     const accessToken = data.data.access_token;
     const publicToken = data.data.public_token;
 
-    // Store session in DB
     const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
     const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
 
@@ -317,30 +341,13 @@ app.get('/broker/zerodha/callback', async (c) => {
 
       await c.env.DB.prepare('INSERT OR REPLACE INTO broker_sessions (user_id, broker, access_token, public_token) VALUES (?, ?, ?, ?)')
         .bind(user.id, 'zerodha', accessToken, publicToken).run();
+      
+      return c.json({ status: 'success' });
+    } else {
+      return c.json({ error: 'User not found' }, 404);
     }
-
-    return c.html(`
-      <html>
-        <body style="background: #000; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
-          <div style="text-align: center;">
-            <h2 style="color: #10b981;">Zerodha Connected Successfully!</h2>
-            <p>Closing this window...</p>
-            <script>
-              setTimeout(() => {
-                if (window.opener) {
-                  window.opener.postMessage({ type: 'BROKER_AUTH_SUCCESS', broker: 'zerodha' }, '*');
-                  window.close();
-                } else {
-                  window.location.href = '/';
-                }
-              }, 2000);
-            </script>
-          </div>
-        </body>
-      </html>
-    `);
   } catch (err: any) {
-    return c.text(`Auth failed: ${err.message}`);
+    return c.json({ error: `Exchange failed: ${err.message}` }, 500);
   }
 });
 

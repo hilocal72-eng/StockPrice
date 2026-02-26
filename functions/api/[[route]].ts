@@ -437,17 +437,29 @@ app.get('/broker/status', async (c) => {
   const username = c.req.query('username');
   if (!username) return c.json({ connected: false });
 
-  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
-  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
-  if (!user) return c.json({ connected: false });
+  try {
+    const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+    const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+    if (!user) return c.json({ connected: false });
 
-  const session = await c.env.DB.prepare('SELECT broker, updated_at FROM broker_sessions WHERE user_id = ?')
-    .bind(user.id).first() as { broker: string; updated_at: string };
+    // Try to fetch session, handle case where table might not exist yet
+    try {
+      const session = await c.env.DB.prepare('SELECT broker, updated_at FROM broker_sessions WHERE user_id = ?')
+        .bind(user.id).first() as { broker: string; updated_at: string };
 
-  if (session) {
-    return c.json({ connected: true, broker: session.broker, last_sync: session.updated_at });
+      if (session) {
+        return c.json({ connected: true, broker: session.broker, last_sync: session.updated_at });
+      }
+    } catch (dbErr) {
+      // Table likely doesn't exist yet, which is fine
+      console.log('Broker sessions table not found or query failed');
+    }
+    
+    return c.json({ connected: false });
+  } catch (err) {
+    console.error('Status check error:', err);
+    return c.json({ connected: false, error: 'Database error' });
   }
-  return c.json({ connected: false });
 });
 
 app.post('/broker/disconnect', async (c) => {

@@ -541,7 +541,7 @@ const App: React.FC = () => {
         await OneSignal.init({
           appId: appId,
           allowLocalhostAsSecureOrigin: true,
-          serviceWorkerPath: 'OneSignalSDKWorker.js'
+          serviceWorkerPath: '/OneSignalSDKWorker.js'
         });
         
         if (currentUser) {

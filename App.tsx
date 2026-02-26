@@ -4,7 +4,7 @@ import OneSignal from 'react-onesignal';
 import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
-import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem } from './types.ts';
+import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem, TradingMode, ZerodhaHolding, ZerodhaPosition, ZerodhaProfile } from './types.ts';
 import TerminalChart from './components/TerminalChart.tsx';
 import AIIntelligenceModal from './components/AIIntelligenceModal.tsx';
 import WatchlistPulseModal from './components/WatchlistPulseModal.tsx';
@@ -136,6 +136,73 @@ const ModelSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               Reset
             </button>
           </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const BrokerSettingsModal: React.FC<{ onClose: () => void; status: { connected: boolean; broker?: string; last_sync?: string }; onConnect: () => void; onDisconnect: () => void }> = ({ onClose, status, onConnect, onDisconnect }) => {
+  return (
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-3">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/85 backdrop-blur-xl" />
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative w-full max-w-sm glossy-card !border-white/40 rounded-2xl overflow-hidden p-4">
+        <div className="flex justify-between items-center mb-5">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-white/20 rounded-lg text-white"><Briefcase size={14} strokeWidth={2.5} /></div>
+            <div>
+              <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Broker Matrix</h2>
+              <p className="text-[7px] font-bold text-white/60 uppercase tracking-widest">Live Execution Layer</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-white/60 hover:text-white transition-colors"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-5">
+          <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-500 border border-orange-500/30">
+                  <Zap size={16} strokeWidth={3} />
+                </div>
+                <div>
+                  <h3 className="text-[10px] font-black text-white uppercase tracking-wider">Zerodha Kite</h3>
+                  <p className="text-[7px] font-bold text-white/40 uppercase tracking-widest">Direct API Integration</p>
+                </div>
+              </div>
+              <div className={`px-2 py-0.5 rounded-full border text-[7px] font-black uppercase tracking-widest ${status.connected && status.broker === 'zerodha' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-white/5 border-white/10 text-white/30'}`}>
+                {status.connected && status.broker === 'zerodha' ? 'Linked' : 'Offline'}
+              </div>
+            </div>
+
+            {status.connected && status.broker === 'zerodha' ? (
+              <div className="space-y-3">
+                <div className="p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                  <p className="text-[8px] font-medium text-emerald-400/80 leading-relaxed">
+                    Terminal connected to Zerodha API. Real-time execution and portfolio sync active.
+                  </p>
+                </div>
+                <button onClick={onDisconnect} className="w-full py-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-400 text-[9px] font-black uppercase tracking-widest hover:bg-rose-500/20 transition-all">
+                  Sever Connection
+                </button>
+              </div>
+            ) : (
+              <button onClick={onConnect} className="w-full py-2.5 rounded-lg bg-white text-black text-[9px] font-black uppercase tracking-widest hover:bg-white/90 transition-all shadow-xl">
+                Connect Zerodha
+              </button>
+            )}
+          </div>
+
+          <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10 flex gap-3">
+            <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
+            <p className="text-[8px] font-medium text-blue-400/70 leading-relaxed">
+              Live trading requires a valid Kite Connect API subscription. Your credentials are encrypted and never stored in plain text.
+            </p>
+          </div>
+
+          <button onClick={onClose} className="w-full py-3 rounded-lg bg-white/5 text-white/60 text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all border border-white/10">
+            Close Matrix
+          </button>
         </div>
       </motion.div>
     </div>
@@ -435,6 +502,12 @@ const App: React.FC = () => {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isPulseModalOpen, setIsPulseModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isBrokerModalOpen, setIsBrokerModalOpen] = useState(false);
+  const [tradingMode, setTradingMode] = useState<TradingMode>((localStorage.getItem('stkr_trading_mode') as TradingMode) || 'paper');
+  const [brokerStatus, setBrokerStatus] = useState<{ connected: boolean; broker?: string; last_sync?: string }>({ connected: false });
+  const [zerodhaHoldings, setZerodhaHoldings] = useState<ZerodhaHolding[]>([]);
+  const [zerodhaPositions, setZerodhaPositions] = useState<ZerodhaPosition[]>([]);
+  const [isBrokerLoading, setIsBrokerLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(localStorage.getItem('stkr_current_user'));
   const [showSplash, setShowSplash] = useState(true);
 
@@ -495,7 +568,101 @@ const App: React.FC = () => {
     setPortfolio([]);
     setFavoriteStocksDetails([]);
     setStockData(null);
+    setBrokerStatus({ connected: false });
+    setTradingMode('paper');
+    localStorage.setItem('stkr_trading_mode', 'paper');
   };
+
+  const fetchBrokerStatus = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`/api/broker/status?username=${encodeURIComponent(currentUser)}`);
+      const data = await res.json();
+      setBrokerStatus(data);
+    } catch (e) {
+      console.error("Failed to fetch broker status:", e);
+    }
+  }, [currentUser]);
+
+  const fetchZerodhaData = useCallback(async () => {
+    if (!currentUser || tradingMode !== 'live') return;
+    setIsBrokerLoading(true);
+    try {
+      const [holdingsRes, positionsRes] = await Promise.all([
+        fetch(`/api/broker/zerodha/holdings?username=${encodeURIComponent(currentUser)}`),
+        fetch(`/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`)
+      ]);
+      
+      const holdingsData = await holdingsRes.json();
+      const positionsData = await positionsRes.json();
+      
+      if (holdingsData.status === 'success') setZerodhaHoldings(holdingsData.data);
+      if (positionsData.status === 'success') setZerodhaPositions(positionsData.data.net);
+    } catch (e) {
+      console.error("Failed to fetch Zerodha data:", e);
+    } finally {
+      setIsBrokerLoading(false);
+    }
+  }, [currentUser, tradingMode]);
+
+  const handleConnectZerodha = async () => {
+    try {
+      const res = await fetch('/api/broker/zerodha/auth-url');
+      const { url } = await res.json();
+      
+      // Append username to redirect so callback knows who it is
+      const finalUrl = `${url}&username=${encodeURIComponent(currentUser || '')}`;
+      
+      const authWindow = window.open(finalUrl, 'zerodha_auth', 'width=600,height=700');
+      
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'BROKER_AUTH_SUCCESS') {
+          fetchBrokerStatus();
+          fetchZerodhaData();
+          window.removeEventListener('message', handleMessage);
+        }
+      };
+      window.addEventListener('message', handleMessage);
+    } catch (e) {
+      console.error("Failed to start Zerodha auth:", e);
+    }
+  };
+
+  const handleDisconnectBroker = async () => {
+    if (!currentUser) return;
+    try {
+      await fetch('/api/broker/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUser })
+      });
+      setBrokerStatus({ connected: false });
+      setTradingMode('paper');
+      localStorage.setItem('stkr_trading_mode', 'paper');
+    } catch (e) {
+      console.error("Failed to disconnect broker:", e);
+    }
+  };
+
+  const toggleTradingMode = () => {
+    const newMode = tradingMode === 'paper' ? 'live' : 'paper';
+    if (newMode === 'live' && !brokerStatus.connected) {
+      setIsBrokerModalOpen(true);
+      return;
+    }
+    setTradingMode(newMode);
+    localStorage.setItem('stkr_trading_mode', newMode);
+  };
+
+  useEffect(() => {
+    fetchBrokerStatus();
+  }, [fetchBrokerStatus]);
+
+  useEffect(() => {
+    if (tradingMode === 'live') {
+      fetchZerodhaData();
+    }
+  }, [tradingMode, fetchZerodhaData]);
   const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
@@ -625,6 +792,20 @@ const App: React.FC = () => {
   }, []);
 
   const portfolioStats = useMemo(() => {
+    if (tradingMode === 'live') {
+      let totalInvested = 0;
+      let totalCurrentValue = 0;
+      zerodhaHoldings.forEach(item => {
+        totalInvested += item.quantity * item.average_price;
+        totalCurrentValue += item.quantity * item.last_price;
+      });
+      return {
+        totalInvested,
+        totalPL: totalCurrentValue - totalInvested,
+        totalPLPercent: totalInvested !== 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0
+      };
+    }
+
     let totalInvested = 0;
     let totalCurrentValue = 0;
     portfolio.forEach(item => {
@@ -636,7 +817,7 @@ const App: React.FC = () => {
       totalPL: totalCurrentValue - totalInvested,
       totalPLPercent: totalInvested !== 0 ? ((totalCurrentValue - totalInvested) / totalInvested) * 100 : 0
     };
-  }, [portfolio]);
+  }, [portfolio, tradingMode, zerodhaHoldings]);
 
   useEffect(() => {
     const hasActive = userAlerts.some(a => a.status === 'active');
@@ -801,6 +982,14 @@ const App: React.FC = () => {
             onClose={() => setIsAdminModalOpen(false)} 
           />
         )}
+        {isBrokerModalOpen && (
+          <BrokerSettingsModal 
+            onClose={() => setIsBrokerModalOpen(false)} 
+            status={brokerStatus}
+            onConnect={handleConnectZerodha}
+            onDisconnect={handleDisconnectBroker}
+          />
+        )}
       </AnimatePresence>
       
       <AnimatePresence>
@@ -872,13 +1061,38 @@ const App: React.FC = () => {
                        <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.4em]">{currentUser}'s Terminal</span>
                     </div>
                   </div>
-                  <button 
-                    onClick={handleLogout} 
-                    className="p-2 text-rose-500/60 hover:text-rose-500 transition-all hover:bg-rose-500/10 rounded-lg border border-rose-500/20"
-                    title="Logout Session"
-                  >
-                    <ZapOff size={16} />
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-1 gap-1">
+                      <button 
+                        onClick={() => toggleTradingMode()}
+                        className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${tradingMode === 'paper' ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        <Shield size={10} strokeWidth={3} />
+                        Paper
+                      </button>
+                      <button 
+                        onClick={() => toggleTradingMode()}
+                        className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${tradingMode === 'live' ? 'bg-rose-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        <Zap size={10} strokeWidth={3} />
+                        Live
+                      </button>
+                    </div>
+                    <button 
+                      onClick={() => setIsBrokerModalOpen(true)}
+                      className={`p-2 rounded-lg border transition-all ${brokerStatus.connected ? 'bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.2)]' : 'bg-white/5 border-white/10 text-white/30 hover:text-white/60'}`}
+                      title="Broker Matrix"
+                    >
+                      <Briefcase size={16} />
+                    </button>
+                    <button 
+                      onClick={handleLogout} 
+                      className="p-2 text-rose-500/60 hover:text-rose-500 transition-all hover:bg-rose-500/10 rounded-lg border border-rose-500/20"
+                      title="Logout Session"
+                    >
+                      <ZapOff size={16} />
+                    </button>
+                  </div>
                 </div>
             </div>
             {activeView === 'dashboard' && (
@@ -938,16 +1152,29 @@ const App: React.FC = () => {
             <div className="space-y-4 animate-in fade-in duration-500">
                <div className="flex justify-between items-center gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="p-2 bg-pink-600/20 text-pink-500 rounded-lg border border-pink-500/30 shadow-[0_0_15px_rgba(236,72,153,0.2)]"><Briefcase size={16} strokeWidth={3} /></div>
+                    <div className={`p-2 rounded-lg border shadow-lg transition-all ${tradingMode === 'live' ? 'bg-rose-600/20 text-rose-500 border-rose-500/30' : 'bg-pink-600/20 text-pink-500 border-pink-500/30'}`}>
+                      <Briefcase size={16} strokeWidth={3} />
+                    </div>
                     <div className="flex flex-col">
-                      <h2 className="text-[11px] font-black text-white uppercase tracking-widest leading-none">PORTFOLIO</h2>
-                      <span className="text-[7px] font-bold text-white/50 uppercase tracking-[0.2em] mt-0.5">Real-time valuation</span>
+                      <h2 className="text-[11px] font-black text-white uppercase tracking-widest leading-none">
+                        {tradingMode === 'live' ? 'LIVE PORTFOLIO' : 'PAPER PORTFOLIO'}
+                      </h2>
+                      <span className="text-[7px] font-bold text-white/50 uppercase tracking-[0.2em] mt-0.5">
+                        {tradingMode === 'live' ? 'Zerodha Kite Integration' : 'Real-time valuation'}
+                      </span>
                     </div>
                   </div>
-                  <button onClick={() => setIsAddTradeModalOpen(true)} className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1.5 active:scale-95">
-                    <Plus size={12} strokeWidth={3} />
-                    ADD POISTION
-                  </button>
+                  {tradingMode === 'paper' ? (
+                    <button onClick={() => setIsAddTradeModalOpen(true)} className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1.5 active:scale-95">
+                      <Plus size={12} strokeWidth={3} />
+                      ADD POSITION
+                    </button>
+                  ) : (
+                    <button onClick={fetchZerodhaData} disabled={isBrokerLoading} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[8px] font-black uppercase tracking-[0.15em] border border-white/20 transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50">
+                      <RefreshCw size={12} className={isBrokerLoading ? 'animate-spin' : ''} />
+                      SYNC KITE
+                    </button>
+                  )}
                </div>
 
                <div className="grid grid-cols-2 gap-3">
@@ -972,8 +1199,10 @@ const App: React.FC = () => {
 
                <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40">
                   <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
-                    <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">HOLDINGS</h3>
-                    {isPortfolioLoading && <Loader2 size={10} className="animate-spin text-pink-500" />}
+                    <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">
+                      {tradingMode === 'live' ? 'ZERODHA HOLDINGS' : 'HOLDINGS'}
+                    </h3>
+                    {(isPortfolioLoading || isBrokerLoading) && <Loader2 size={10} className="animate-spin text-pink-500" />}
                   </div>
                   <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left border-collapse min-w-[420px]">
@@ -988,34 +1217,65 @@ const App: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/10">
-                        {portfolio.map(item => {
-                          const pl = item.currentPrice ? (item.currentPrice - item.avgPrice) * item.quantity : 0;
-                          const plPerc = (pl / (item.avgPrice * item.quantity)) * 100;
-                          return (
-                            <tr key={item.id} className="hover:bg-white/[0.04] transition-colors group">
-                              <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.symbol)}>
-                                <div className="flex flex-col">
-                                  <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.symbol}</span>
-                                </div>
-                              </td>
-                              <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
-                              <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.avgPrice.toFixed(2)}</td>
-                              <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.currentPrice?.toFixed(2) || '---'}</td>
-                              <td className="px-2 py-3 text-right border-r border-white/10">
-                                <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
-                                  <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-3 text-center">
-                                <button onClick={() => handleRemovePortfolioItem(item.id)} className="p-1.5 rounded-md text-white/30 hover:text-rose-500 hover:bg-rose-500/10 transition-all border border-transparent hover:border-rose-500/20">
-                                  <Trash2 size={12} strokeWidth={2.5} />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {portfolio.length === 0 && (
+                        {tradingMode === 'paper' ? (
+                          portfolio.map(item => {
+                            const pl = item.currentPrice ? (item.currentPrice - item.avgPrice) * item.quantity : 0;
+                            const plPerc = (pl / (item.avgPrice * item.quantity)) * 100;
+                            return (
+                              <tr key={item.id} className="hover:bg-white/[0.04] transition-colors group">
+                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.symbol)}>
+                                  <div className="flex flex-col">
+                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.symbol}</span>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
+                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.avgPrice.toFixed(2)}</td>
+                                <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.currentPrice?.toFixed(2) || '---'}</td>
+                                <td className="px-2 py-3 text-right border-r border-white/10">
+                                  <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
+                                    <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <button onClick={() => handleRemovePortfolioItem(item.id)} className="p-1.5 rounded-md text-white/30 hover:text-rose-500 hover:bg-rose-500/10 transition-all border border-transparent hover:border-rose-500/20">
+                                    <Trash2 size={12} strokeWidth={2.5} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          zerodhaHoldings.map((item, i) => {
+                            const pl = item.pnl;
+                            const plPerc = (pl / (item.average_price * item.quantity)) * 100;
+                            return (
+                              <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
+                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.tradingsymbol)}>
+                                  <div className="flex flex-col">
+                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.tradingsymbol}</span>
+                                    <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{item.exchange}</span>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
+                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.average_price.toFixed(2)}</td>
+                                <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.last_price.toFixed(2)}</td>
+                                <td className="px-2 py-3 text-right border-r border-white/10">
+                                  <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
+                                    <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <button onClick={() => handleSelectAndSearch(item.tradingsymbol)} className="p-1.5 rounded-md text-white/30 hover:text-pink-500 hover:bg-pink-500/10 transition-all border border-transparent hover:border-pink-500/20">
+                                    <ArrowUpRight size={12} strokeWidth={2.5} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                        {(tradingMode === 'paper' ? portfolio.length : zerodhaHoldings.length) === 0 && (
                           <tr>
                             <td colSpan={6} className="py-16 text-center">
                               <div className="flex flex-col items-center gap-2">
@@ -1029,6 +1289,54 @@ const App: React.FC = () => {
                     </table>
                   </div>
                </div>
+
+               {tradingMode === 'live' && zerodhaPositions.length > 0 && (
+                 <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40">
+                    <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
+                      <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">ZERODHA POSITIONS</h3>
+                    </div>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left border-collapse min-w-[420px]">
+                        <thead>
+                          <tr className="bg-white/[0.02] border-b border-white/20">
+                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
+                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Quantity</th>
+                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Avg Cost</th>
+                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Mkt Price</th>
+                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">P/L</th>
+                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Product</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/10">
+                          {zerodhaPositions.map((item, i) => {
+                            const pl = item.pnl;
+                            return (
+                              <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
+                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.tradingsymbol)}>
+                                  <div className="flex flex-col">
+                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.tradingsymbol}</span>
+                                    <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{item.exchange}</span>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
+                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.average_price.toFixed(2)}</td>
+                                <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.last_price.toFixed(2)}</td>
+                                <td className="px-2 py-3 text-right border-r border-white/10">
+                                  <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className="text-[8px] font-black text-white/40 uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 border border-white/10">{item.product}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                 </div>
+               )}
             </div>
           ) : activeView === 'favorites' ? (
             <div className="space-y-3.5 animate-in fade-in duration-500">

@@ -6,6 +6,8 @@ type Bindings = {
   DB: any;
   ONESIGNAL_APP_ID: string;
   ONESIGNAL_API_KEY: string;
+  ZERODHA_API_KEY: string;
+  ZERODHA_API_SECRET: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
@@ -245,7 +247,211 @@ app.get('/cron/check', async (c) => {
   }
 });
 
-// Admin Endpoints
+// Broker Endpoints (Zerodha)
+app.get('/broker/zerodha/auth-url', async (c) => {
+  const apiKey = c.env.ZERODHA_API_KEY;
+  if (!apiKey) return c.json({ error: 'Zerodha API Key not configured' }, 500);
+  
+  const authUrl = `https://kite.zerodha.com/connect/login?v=3&api_key=${apiKey}`;
+  return c.json({ url: authUrl });
+});
+
+app.get('/broker/zerodha/callback', async (c) => {
+  const requestToken = c.req.query('request_token');
+  const username = c.req.query('username'); // Passed from frontend in redirect
+  
+  if (!requestToken || !username) {
+    return c.text('Missing request_token or username');
+  }
+
+  const apiKey = c.env.ZERODHA_API_KEY;
+  const apiSecret = c.env.ZERODHA_API_SECRET;
+
+  try {
+    // Exchange request_token for access_token
+    const sha256 = async (message: string) => {
+      const msgBuffer = new TextEncoder().encode(message);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+
+    const checksum = await sha256(apiKey + requestToken + apiSecret);
+    
+    const response = await fetch('https://api.kite.trade/session/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Kite-Version': '3'
+      },
+      body: new URLSearchParams({
+        api_key: apiKey,
+        request_token: requestToken,
+        checksum: checksum
+      })
+    });
+
+    const data = await response.json() as any;
+    if (data.status === 'error') {
+      return c.text(`Zerodha Error: ${data.message}`);
+    }
+
+    const accessToken = data.data.access_token;
+    const publicToken = data.data.public_token;
+
+    // Store session in DB
+    const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+    const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+
+    if (user) {
+      await c.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS broker_sessions (
+          user_id INTEGER PRIMARY KEY,
+          broker TEXT NOT NULL,
+          access_token TEXT NOT NULL,
+          public_token TEXT,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+      `).run();
+
+      await c.env.DB.prepare('INSERT OR REPLACE INTO broker_sessions (user_id, broker, access_token, public_token) VALUES (?, ?, ?, ?)')
+        .bind(user.id, 'zerodha', accessToken, publicToken).run();
+    }
+
+    return c.html(`
+      <html>
+        <body style="background: #000; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
+          <div style="text-align: center;">
+            <h2 style="color: #10b981;">Zerodha Connected Successfully!</h2>
+            <p>Closing this window...</p>
+            <script>
+              setTimeout(() => {
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'BROKER_AUTH_SUCCESS', broker: 'zerodha' }, '*');
+                  window.close();
+                } else {
+                  window.location.href = '/';
+                }
+              }, 2000);
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err: any) {
+    return c.text(`Auth failed: ${err.message}`);
+  }
+});
+
+app.get('/broker/zerodha/holdings', async (c) => {
+  const username = c.req.query('username');
+  if (!username) return c.json({ error: 'Missing username' }, 400);
+
+  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+  if (!user) return c.json({ error: 'User not found' }, 404);
+
+  const session = await c.env.DB.prepare('SELECT access_token FROM broker_sessions WHERE user_id = ? AND broker = ?')
+    .bind(user.id, 'zerodha').first() as { access_token: string };
+
+  if (!session) return c.json({ error: 'Broker not connected' }, 401);
+
+  const response = await fetch('https://api.kite.trade/portfolio/holdings', {
+    headers: {
+      'X-Kite-Version': '3',
+      'Authorization': `token ${c.env.ZERODHA_API_KEY}:${session.access_token}`
+    }
+  });
+
+  const data = await response.json();
+  return c.json(data);
+});
+
+app.get('/broker/zerodha/positions', async (c) => {
+  const username = c.req.query('username');
+  if (!username) return c.json({ error: 'Missing username' }, 400);
+
+  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+  if (!user) return c.json({ error: 'User not found' }, 404);
+
+  const session = await c.env.DB.prepare('SELECT access_token FROM broker_sessions WHERE user_id = ? AND broker = ?')
+    .bind(user.id, 'zerodha').first() as { access_token: string };
+
+  if (!session) return c.json({ error: 'Broker not connected' }, 401);
+
+  const response = await fetch('https://api.kite.trade/portfolio/positions', {
+    headers: {
+      'X-Kite-Version': '3',
+      'Authorization': `token ${c.env.ZERODHA_API_KEY}:${session.access_token}`
+    }
+  });
+
+  const data = await response.json();
+  return c.json(data);
+});
+
+app.post('/broker/zerodha/order', async (c) => {
+  const { username, ticker, quantity, transaction_type, order_type, product, price } = await c.req.json();
+  
+  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+  if (!user) return c.json({ error: 'User not found' }, 404);
+
+  const session = await c.env.DB.prepare('SELECT access_token FROM broker_sessions WHERE user_id = ? AND broker = ?')
+    .bind(user.id, 'zerodha').first() as { access_token: string };
+
+  if (!session) return c.json({ error: 'Broker not connected' }, 401);
+
+  const response = await fetch('https://api.kite.trade/orders/regular', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Kite-Version': '3',
+      'Authorization': `token ${c.env.ZERODHA_API_KEY}:${session.access_token}`
+    },
+    body: new URLSearchParams({
+      tradingsymbol: ticker,
+      exchange: 'NSE', // Default to NSE for simplicity
+      transaction_type,
+      order_type,
+      quantity: quantity.toString(),
+      product,
+      price: price ? price.toString() : '0'
+    })
+  });
+
+  const data = await response.json();
+  return c.json(data);
+});
+
+app.get('/broker/status', async (c) => {
+  const username = c.req.query('username');
+  if (!username) return c.json({ connected: false });
+
+  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+  if (!user) return c.json({ connected: false });
+
+  const session = await c.env.DB.prepare('SELECT broker, updated_at FROM broker_sessions WHERE user_id = ?')
+    .bind(user.id).first() as { broker: string; updated_at: string };
+
+  if (session) {
+    return c.json({ connected: true, broker: session.broker, last_sync: session.updated_at });
+  }
+  return c.json({ connected: false });
+});
+
+app.post('/broker/disconnect', async (c) => {
+  const { username } = await c.req.json();
+  const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+  const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+  if (!user) return c.json({ success: false });
+
+  await c.env.DB.prepare('DELETE FROM broker_sessions WHERE user_id = ?').bind(user.id).run();
+  return c.json({ success: true });
+});
 app.get('/admin/users', async (c) => {
   const requester = c.req.query('requester');
   if (requester?.toLowerCase() !== 'admin') {

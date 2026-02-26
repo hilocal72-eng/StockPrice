@@ -113,3 +113,32 @@ export interface PortfolioItem {
   avgPrice: number;
   currentPrice?: number;
 }
+
+export type TradingMode = 'paper' | 'live';
+
+export interface ZerodhaProfile {
+  user_id: string;
+  user_name: string;
+  email: string;
+  broker: string;
+}
+
+export interface ZerodhaHolding {
+  tradingsymbol: string;
+  exchange: string;
+  isin: string;
+  quantity: number;
+  average_price: number;
+  last_price: number;
+  pnl: number;
+}
+
+export interface ZerodhaPosition {
+  tradingsymbol: string;
+  exchange: string;
+  quantity: number;
+  average_price: number;
+  last_price: number;
+  pnl: number;
+  product: string;
+}

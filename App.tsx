@@ -158,7 +158,7 @@ const BrokerSettingsModal: React.FC<{
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-white/20 rounded-lg text-white"><Briefcase size={14} strokeWidth={2.5} /></div>
             <div>
-              <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Broker Matrix</h2>
+              <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Zerodha</h2>
               <p className="text-[7px] font-bold text-white/60 uppercase tracking-widest">Live Execution Layer</p>
             </div>
           </div>
@@ -166,45 +166,42 @@ const BrokerSettingsModal: React.FC<{
         </div>
 
         <div className="space-y-5">
-          <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-500 border border-orange-500/30">
-                  <Zap size={16} strokeWidth={3} />
+          {status.connected && status.broker === 'zerodha' ? (
+            <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 border border-emerald-500/30">
+                  <Zap size={20} strokeWidth={3} />
                 </div>
                 <div>
-                  <h3 className="text-[10px] font-black text-white uppercase tracking-wider">Zerodha Kite</h3>
-                  <p className="text-[7px] font-bold text-white/40 uppercase tracking-widest">Direct API Integration</p>
+                  <h3 className="text-[12px] font-black text-white uppercase tracking-wider">Zerodha Kite</h3>
+                  <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">Connected</p>
                 </div>
               </div>
-              <div className={`px-2 py-0.5 rounded-full border text-[7px] font-black uppercase tracking-widest ${status.connected && status.broker === 'zerodha' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-white/5 border-white/10 text-white/30'}`}>
-                {status.connected && status.broker === 'zerodha' ? 'Linked' : 'Offline'}
-              </div>
+              <button onClick={onDisconnect} className="p-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all" title="Disconnect">
+                <ZapOff size={16} strokeWidth={3} />
+              </button>
             </div>
-
-            {status.connected && status.broker === 'zerodha' ? (
-              <div className="space-y-3">
-                <div className="p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
-                  <p className="text-[8px] font-medium text-emerald-400/80 leading-relaxed">
-                    Terminal connected to Zerodha API. Real-time execution and portfolio sync active.
-                  </p>
+          ) : (
+            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-500 border border-orange-500/30">
+                    <Zap size={16} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h3 className="text-[10px] font-black text-white uppercase tracking-wider">Zerodha Kite</h3>
+                    <p className="text-[7px] font-bold text-white/40 uppercase tracking-widest">Direct API Integration</p>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={onSync} disabled={isSyncing} className="py-2.5 rounded-lg border border-white/20 bg-white/5 text-white text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                    <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
-                    Sync
-                  </button>
-                  <button onClick={onDisconnect} className="py-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-400 text-[9px] font-black uppercase tracking-widest hover:bg-rose-500/20 transition-all">
-                    Sever
-                  </button>
+                <div className="px-2 py-0.5 rounded-full border text-[7px] font-black uppercase tracking-widest bg-white/5 border-white/10 text-white/30">
+                  Offline
                 </div>
               </div>
-            ) : (
               <button onClick={onConnect} className="w-full py-2.5 rounded-lg bg-white text-black text-[9px] font-black uppercase tracking-widest hover:bg-white/90 transition-all shadow-xl">
                 Connect Zerodha
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10 flex gap-3">
             <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
@@ -498,6 +495,133 @@ const PriceActionTable: React.FC<{ data: DayAction[] }> = ({ data }) => {
   );
 };
 
+const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> = ({ onClose, currentUser }) => {
+  const [ticker, setTicker] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [transactionType, setTransactionType] = useState('BUY');
+  const [orderType, setOrderType] = useState('MARKET');
+  const [product, setProduct] = useState('CNC');
+  const [price, setPrice] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticker || !quantity) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/broker/zerodha/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUser,
+          ticker: ticker.toUpperCase(),
+          quantity: parseInt(quantity, 10),
+          transaction_type: transactionType,
+          order_type: orderType,
+          product: product,
+          price: orderType === 'LIMIT' ? parseFloat(price) : 0
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        alert('Order placed successfully!');
+        onClose();
+      } else {
+        alert(`Order failed: ${data.message || data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to place order');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[450] flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative w-full max-w-sm glossy-card !border-white/40 rounded-3xl overflow-hidden p-5">
+        <div className="flex justify-between items-center mb-5">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-pink-600 rounded-lg text-white"><Zap size={14} strokeWidth={3} /></div>
+            <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Zerodha Order</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-white/50 hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <button type="button" onClick={() => setTransactionType('BUY')} className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${transactionType === 'BUY' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-white/5 border-white/10 text-white/40'}`}>BUY</button>
+            <button type="button" onClick={() => setTransactionType('SELL')} className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${transactionType === 'SELL' ? 'bg-rose-500/20 border-rose-500/50 text-rose-400' : 'bg-white/5 border-white/10 text-white/40'}`}>SELL</button>
+          </div>
+
+          <div className="relative">
+            <label className="text-[7px] font-black uppercase text-white/70 tracking-widest mb-1 block">Trading Symbol</label>
+            <input 
+              type="text" 
+              placeholder="e.g. RELIANCE" 
+              value={ticker} 
+              onChange={(e) => setTicker(e.target.value.toUpperCase())}
+              className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all uppercase" 
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Product</label>
+              <select value={product} onChange={(e) => setProduct(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all [&>option]:bg-black">
+                <option value="CNC">CNC (Long term)</option>
+                <option value="MIS">MIS (Intraday)</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Order Type</label>
+              <select value={orderType} onChange={(e) => setOrderType(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all [&>option]:bg-black">
+                <option value="MARKET">Market</option>
+                <option value="LIMIT">Limit</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Qty</label>
+              <input 
+                type="number" 
+                min="1"
+                placeholder="1" 
+                value={quantity} 
+                onChange={(e) => setQuantity(e.target.value)}
+                className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all tabular-nums" 
+                required
+              />
+            </div>
+            {orderType === 'LIMIT' && (
+              <div className="space-y-1">
+                <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Price</label>
+                <input 
+                  type="number" 
+                  step="0.05" 
+                  placeholder="0.00" 
+                  value={price} 
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all tabular-nums" 
+                  required
+                />
+              </div>
+            )}
+          </div>
+
+          <button type="submit" disabled={isSubmitting} className="w-full bg-pink-600 hover:bg-pink-500 text-white py-2.5 rounded-lg text-[8px] font-black uppercase tracking-[0.2em] shadow-lg shadow-pink-600/10 transition-all active:scale-95 border border-white/10 mt-2 disabled:opacity-50">
+            {isSubmitting ? 'Placing Order...' : 'Place Order'}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
@@ -761,6 +885,7 @@ const App: React.FC = () => {
 
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [isAddTradeModalOpen, setIsAddTradeModalOpen] = useState(false);
+  const [isZerodhaTradeModalOpen, setIsZerodhaTradeModalOpen] = useState(false);
   const [isPortfolioLoading, setIsPortfolioLoading] = useState(false);
 
   const [userAlerts, setUserAlerts] = useState<Alert[]>([]);
@@ -1052,6 +1177,7 @@ const App: React.FC = () => {
         {selectedSentiment && <SentimentDetailModal ticker={selectedSentiment.ticker} analysis={selectedSentiment.analysis} onClose={() => setSelectedSentiment(null)} />}
         {isAlertModalOpen && stockData && <AlertModal ticker={stockData.info.ticker} currentPrice={stockData.info.currentPrice} onClose={() => setIsAlertModalOpen(false)} onSave={handleSaveAlert} />}
         {isAddTradeModalOpen && <AddTradeModal onClose={() => setIsAddTradeModalOpen(false)} onAdd={handleAddPortfolioItem} />}
+        {isZerodhaTradeModalOpen && currentUser && <ZerodhaTradeModal onClose={() => setIsZerodhaTradeModalOpen(false)} currentUser={currentUser} />}
         {isModelSettingsOpen && <ModelSettingsModal onClose={() => setIsModelSettingsOpen(false)} />}
         {isAIModalOpen && stockData && (
           <AIIntelligenceModal 
@@ -1139,51 +1265,51 @@ const App: React.FC = () => {
                   transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                   className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(236,72,153,0.1)_90deg,rgba(236,72,153,0.8)_180deg,rgba(236,72,153,0.1)_270deg,transparent_360deg)] opacity-60"
                 />
-                <div className="relative flex items-center justify-between gap-4 px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10">
-                  <div className="flex items-center gap-4">
+                <div className="relative flex items-center justify-between gap-2 sm:gap-4 px-2 sm:px-4 py-2 bg-black/80 backdrop-blur-2xl rounded-[calc(0.75rem-1px)] border border-white/10 overflow-x-auto custom-scrollbar">
+                  <div className="flex items-center gap-2 sm:gap-4 shrink-0">
                     <motion.button 
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => setIsModelSettingsOpen(true)}
-                      className="p-2 rounded-lg bg-pink-600 text-white shadow-[0_0_15px_rgba(236,72,153,0.4)] border border-white/20 cursor-pointer"
+                      className="p-1.5 sm:p-2 rounded-lg bg-pink-600 text-white shadow-[0_0_15px_rgba(236,72,153,0.4)] border border-white/20 cursor-pointer shrink-0"
                     >
-                       <TrendingUp size={16} strokeWidth={4} />
+                       <TrendingUp size={14} className="sm:w-4 sm:h-4" strokeWidth={4} />
                     </motion.button>
-                    <div className="flex flex-col">
-                       <h1 className="text-sm font-black text-white uppercase tracking-[0.3em] leading-tight">Stocker</h1>
-                       <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.4em]">{currentUser}'s Terminal</span>
+                    <div className="flex flex-col hidden xs:flex">
+                       <h1 className="text-xs sm:text-sm font-black text-white uppercase tracking-[0.3em] leading-tight">Stocker</h1>
+                       <span className="text-[6px] sm:text-[8px] font-bold text-white/40 uppercase tracking-[0.4em] hidden sm:block">{currentUser}'s Terminal</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-1 gap-1">
+                  <div className="flex items-center gap-1 sm:gap-4 shrink-0">
+                    <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-0.5 sm:p-1 gap-0.5 sm:gap-1">
                       <button 
                         onClick={() => toggleTradingMode()}
-                        className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${tradingMode === 'paper' ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        className={`px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 sm:gap-2 ${tradingMode === 'paper' ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                       >
                         <Shield size={10} strokeWidth={3} />
-                        Paper
+                        <span className="hidden sm:inline">Paper</span>
                       </button>
                       <button 
                         onClick={() => toggleTradingMode()}
-                        className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${tradingMode === 'live' ? 'bg-rose-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        className={`px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 sm:gap-2 ${tradingMode === 'live' ? 'bg-rose-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                       >
                         <Zap size={10} strokeWidth={3} />
-                        Live
+                        <span className="hidden sm:inline">Live</span>
                       </button>
                     </div>
                     <button 
                       onClick={() => setIsBrokerModalOpen(true)}
-                      className={`p-2 rounded-lg border transition-all ${brokerStatus.connected ? 'bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.2)]' : 'bg-white/5 border-white/10 text-white/30 hover:text-white/60'}`}
-                      title="Broker Matrix"
+                      className={`p-1.5 sm:p-2 rounded-lg border transition-all shrink-0 ${brokerStatus.connected ? 'bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.2)]' : 'bg-white/5 border-white/10 text-white/30 hover:text-white/60'}`}
+                      title="Zerodha"
                     >
-                      <Briefcase size={16} />
+                      <Briefcase size={14} className="sm:w-4 sm:h-4" />
                     </button>
                     <button 
                       onClick={handleLogout} 
-                      className="p-2 text-rose-500/60 hover:text-rose-500 transition-all hover:bg-rose-500/10 rounded-lg border border-rose-500/20"
+                      className="p-1.5 sm:p-2 text-rose-500/60 hover:text-rose-500 transition-all hover:bg-rose-500/10 rounded-lg border border-rose-500/20 shrink-0"
                       title="Logout Session"
                     >
-                      <ZapOff size={16} />
+                      <ZapOff size={14} className="sm:w-4 sm:h-4" />
                     </button>
                   </div>
                 </div>
@@ -1258,15 +1384,23 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   {tradingMode === 'paper' ? (
-                    <button onClick={() => setIsAddTradeModalOpen(true)} className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1.5 active:scale-95">
-                      <Plus size={12} strokeWidth={3} />
-                      ADD POSITION
+                    <button onClick={() => setIsAddTradeModalOpen(true)} className="px-3 sm:px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95 shrink-0">
+                      <Plus size={12} className="w-3 h-3 sm:w-4 sm:h-4" strokeWidth={3} />
+                      <span className="hidden xs:inline">ADD POSITION</span>
+                      <span className="xs:hidden">ADD</span>
                     </button>
                   ) : (
-                    <button onClick={fetchZerodhaData} disabled={isBrokerLoading} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[8px] font-black uppercase tracking-[0.15em] border border-white/20 transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50">
-                      <RefreshCw size={12} className={isBrokerLoading ? 'animate-spin' : ''} />
-                      SYNC KITE
-                    </button>
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      <button onClick={() => setIsZerodhaTradeModalOpen(true)} className="px-2.5 sm:px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95">
+                        <Zap size={10} className="w-2.5 h-2.5 sm:w-3 sm:h-3" strokeWidth={3} />
+                        TRADE
+                      </button>
+                      <button onClick={fetchZerodhaData} disabled={isBrokerLoading} className="px-2.5 sm:px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95 disabled:opacity-50">
+                        <RefreshCw size={10} className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isBrokerLoading ? 'animate-spin' : ''}`} />
+                        <span className="hidden xs:inline">SYNC KITE</span>
+                        <span className="xs:hidden">SYNC</span>
+                      </button>
+                    </div>
                   )}
                </div>
 

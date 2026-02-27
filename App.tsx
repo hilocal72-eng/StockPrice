@@ -543,7 +543,7 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
   useEffect(() => {
     if (ticker.trim() && isSearchFocused) {
       debounceTimeout.current = window.setTimeout(async () => {
-        const results = await searchStocks(ticker);
+        const results = await searchStocks(ticker, true);
         setSearchResults(results);
       }, 300);
     } else {

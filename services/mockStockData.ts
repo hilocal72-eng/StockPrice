@@ -24,8 +24,9 @@ const fetchYahoo = async (symbol: string, interval: string, range: string): Prom
 export const searchStocks = async (query: string): Promise<SearchResult[]> => {
   if (!query || query.trim().length < 1) return [];
   try {
-    const targetUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=US&quotesCount=6&newsCount=0&listsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true`;
-    // Use local proxy instead of Cloudflare worker
+    // Increase quotesCount to 20 for more comprehensive results
+    const targetUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=IN&quotesCount=20&newsCount=0&listsCount=0&enableFuzzyQuery=true`;
+    
     const url = `/api/proxy`;
     const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
     if (!response.ok) return [];
@@ -35,12 +36,26 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
     if (data.quotes && data.quotes.length > 0) {
       results = data.quotes
         .filter((q: any) => q.symbol && (q.longname || q.shortname))
-        .map((q: any) => ({
-          // Strip .NS and .BO for Zerodha style symbols
-          symbol: q.symbol.split('.')[0],
-          name: q.longname || q.shortname,
-          exchange: q.exchange,
-        }));
+        .map((q: any) => {
+          const isNSE = q.symbol.endsWith('.NS');
+          const isBSE = q.symbol.endsWith('.BO');
+          
+          return {
+            // Strip .NS and .BO for Zerodha style symbols
+            symbol: q.symbol.split('.')[0],
+            name: q.longname || q.shortname,
+            // Map exchange to NSE/BSE for Indian stocks, otherwise use Yahoo's exchange
+            exchange: isNSE ? 'NSE' : isBSE ? 'BSE' : q.exchange,
+          };
+        })
+        // Prioritize Indian exchanges (NSE/BSE) for Zerodha integration
+        .sort((a, b) => {
+          const aIsIndian = a.exchange === 'NSE' || a.exchange === 'BSE';
+          const bIsIndian = b.exchange === 'NSE' || b.exchange === 'BSE';
+          if (aIsIndian && !bIsIndian) return -1;
+          if (!aIsIndian && bIsIndian) return 1;
+          return 0;
+        });
     }
 
     // Mock NFO segment data for Zerodha
@@ -48,17 +63,30 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
     const queryWords = upperQuery.split(/\s+/).filter(w => w.length > 0);
     
     const mockNFO = [
+      // Monthly Expiries
       { symbol: 'NIFTY24FEB22000CE', name: 'NIFTY 24 FEB 22000 CE', exchange: 'NFO' },
       { symbol: 'NIFTY24FEB22000PE', name: 'NIFTY 24 FEB 22000 PE', exchange: 'NFO' },
       { symbol: 'NIFTY24MAR22500CE', name: 'NIFTY 24 MAR 22500 CE', exchange: 'NFO' },
       { symbol: 'NIFTY24MAR22500PE', name: 'NIFTY 24 MAR 22500 PE', exchange: 'NFO' },
       { symbol: 'BANKNIFTY24FEB46000CE', name: 'BANKNIFTY 24 FEB 46000 CE', exchange: 'NFO' },
       { symbol: 'BANKNIFTY24FEB46000PE', name: 'BANKNIFTY 24 FEB 46000 PE', exchange: 'NFO' },
-      { symbol: 'BANKNIFTY24MAR47000CE', name: 'BANKNIFTY 24 MAR 47000 CE', exchange: 'NFO' },
-      { symbol: 'BANKNIFTY24MAR47000PE', name: 'BANKNIFTY 24 MAR 47000 PE', exchange: 'NFO' },
+      
+      // Weekly Expiries (Commonly used in Zerodha)
+      { symbol: 'NIFTY2420822000CE', name: 'NIFTY 24 08 FEB 22000 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY2420822000PE', name: 'NIFTY 24 08 FEB 22000 PE', exchange: 'NFO' },
+      { symbol: 'NIFTY2421522100CE', name: 'NIFTY 24 15 FEB 22100 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY2421522100PE', name: 'NIFTY 24 15 FEB 22100 PE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2420745500CE', name: 'BANKNIFTY 24 07 FEB 45500 CE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2420745500PE', name: 'BANKNIFTY 24 07 FEB 45500 PE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2421445800CE', name: 'BANKNIFTY 24 14 FEB 45800 CE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2421445800PE', name: 'BANKNIFTY 24 14 FEB 45800 PE', exchange: 'NFO' },
+
+      // Futures
       { symbol: 'NIFTY24FEBFUT', name: 'NIFTY 24 FEB FUT', exchange: 'NFO' },
       { symbol: 'BANKNIFTY24FEBFUT', name: 'BANKNIFTY 24 FEB FUT', exchange: 'NFO' },
       { symbol: 'RELIANCE24FEBFUT', name: 'RELIANCE 24 FEB FUT', exchange: 'NFO' },
+      { symbol: 'HDFCBANK24FEBFUT', name: 'HDFCBANK 24 FEB FUT', exchange: 'NFO' },
+      { symbol: 'INFY24FEBFUT', name: 'INFY 24 FEB FUT', exchange: 'NFO' },
     ];
     
     const filteredNFO = mockNFO.filter(nfo => {

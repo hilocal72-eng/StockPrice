@@ -417,6 +417,51 @@ async function startServer() {
     });
   });
 
+  app.get("/api/broker/status", (req, res) => {
+    const { username } = req.query;
+    // For mock purposes, we'll say it's always connected if the user exists
+    res.json({
+      connected: true,
+      broker: 'zerodha',
+      last_sync: new Date().toISOString()
+    });
+  });
+
+  app.post("/api/broker/zerodha/exchange", (req, res) => {
+    const { username, requestToken } = req.body;
+    console.log(`STKR_LOG: Zerodha token exchange for ${username} with token ${requestToken}`);
+    
+    // Mock successful exchange
+    res.json({
+      status: 'success',
+      message: 'Token exchanged successfully'
+    });
+  });
+
+  app.get("/api/broker/zerodha/holdings", (req, res) => {
+    res.json({
+      status: 'success',
+      data: [
+        { tradingsymbol: "RELIANCE", exchange: "NSE", isin: "INE002A01018", quantity: 10, t1_quantity: 0, realised_quantity: 10, authorised_quantity: 10, average_price: 2450.50, last_price: 2910.20, pnl: 4597.00 },
+        { tradingsymbol: "TCS", exchange: "NSE", isin: "INE467B01029", quantity: 5, t1_quantity: 0, realised_quantity: 5, authorised_quantity: 5, average_price: 3200.00, last_price: 3855.40, pnl: 3277.00 },
+        { tradingsymbol: "HDFCBANK", exchange: "NSE", isin: "INE040A01034", quantity: 20, t1_quantity: 0, realised_quantity: 20, authorised_quantity: 20, average_price: 1550.00, last_price: 1420.15, pnl: -2597.00 }
+      ]
+    });
+  });
+
+  app.get("/api/broker/zerodha/positions", (req, res) => {
+    res.json({
+      status: 'success',
+      data: {
+        net: [
+          { tradingsymbol: "NIFTY24FEB22000CE", exchange: "NFO", instrument_token: 12345, product: "NRML", quantity: 50, over_night_quantity: 50, multiplier: 1, average_price: 120.50, last_price: 145.20, pnl: 1235.00, realised: 0, unrealised: 1235.00, buy_quantity: 50, buy_price: 120.50, buy_value: 6025, sell_quantity: 0, sell_price: 0, sell_value: 0 },
+          { tradingsymbol: "BANKNIFTY24FEB46000PE", exchange: "NFO", instrument_token: 67890, product: "MIS", quantity: 0, over_night_quantity: 0, multiplier: 1, average_price: 0, last_price: 210.40, pnl: 850.00, realised: 850.00, unrealised: 0, buy_quantity: 15, buy_price: 250.00, buy_value: 3750, sell_quantity: 15, sell_price: 306.66, sell_value: 4600 }
+        ],
+        day: []
+      }
+    });
+  });
+
   // Catch-all for undefined API routes
   app.use("/api", (req, res) => {
     console.log(`STKR_LOG: Unhandled API route: ${req.method} ${req.originalUrl}`);

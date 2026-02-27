@@ -882,18 +882,23 @@ const App: React.FC = () => {
     if (!currentUser) return;
     try {
       const res = await fetch(`/api/broker/status?username=${encodeURIComponent(currentUser)}`);
+      if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
       const data = await res.json();
       setBrokerStatus(data);
     } catch (e) {
-      console.error("Failed to fetch broker status:", e);
+      console.error("STKR_LOG: Failed to fetch broker status:", e);
     }
   }, [currentUser]);
 
   const fetchZerodhaData = useCallback(async () => {
     if (!currentUser) return;
     // If we're not in 'live' mode and not in 'z' view, don't fetch
-    if (tradingMode !== 'live' && activeView !== 'z') return;
+    if (tradingMode !== 'live' && activeView !== 'z') {
+      console.log("STKR_LOG: Skipping Zerodha fetch - not in live mode/Z view");
+      return;
+    }
     
+    console.log("STKR_LOG: Fetching Zerodha data...");
     setIsBrokerLoading(true);
     try {
       const [holdingsRes, positionsRes, ordersRes, marginsRes] = await Promise.all([
@@ -903,10 +908,16 @@ const App: React.FC = () => {
         fetch(`/api/broker/zerodha/margins?username=${encodeURIComponent(currentUser)}`)
       ]);
       
-      const holdingsData = await holdingsRes.json();
-      const positionsData = await positionsRes.json();
-      const ordersData = await ordersRes.json();
-      const marginsData = await marginsRes.json();
+      if (!holdingsRes.ok || !positionsRes.ok || !ordersRes.ok || !marginsRes.ok) {
+        throw new Error("One or more Zerodha API calls failed");
+      }
+
+      const [holdingsData, positionsData, ordersData, marginsData] = await Promise.all([
+        holdingsRes.json(),
+        positionsRes.json(),
+        ordersRes.json(),
+        marginsRes.json()
+      ]);
       
       if (holdingsData.status === 'success') setZerodhaHoldings(holdingsData.data);
       if (positionsData.status === 'success') setZerodhaPositions(positionsData.data.net);
@@ -916,8 +927,10 @@ const App: React.FC = () => {
         const sortedOrders = ordersData.data.sort((a: any, b: any) => new Date(b.order_timestamp).getTime() - new Date(a.order_timestamp).getTime());
         setZerodhaOrders(sortedOrders);
       }
+      console.log("STKR_LOG: Zerodha data fetched successfully");
     } catch (e) {
-      console.error("Failed to fetch Zerodha data:", e);
+      console.error("STKR_LOG: Failed to fetch Zerodha data:", e);
+      toast.error("Failed to sync with Zerodha. Please try again.");
     } finally {
       setIsBrokerLoading(false);
     }
@@ -1062,10 +1075,11 @@ const App: React.FC = () => {
     } else if (activeView === 'z') {
       setTradingMode('live');
       localStorage.setItem('stkr_trading_mode', 'live');
-      // Fetch data immediately when switching to Z view
+      // Fetch status and data immediately when switching to Z view
+      fetchBrokerStatus();
       fetchZerodhaData();
     }
-  }, [activeView, fetchZerodhaData]);
+  }, [activeView, fetchZerodhaData, fetchBrokerStatus]);
 
   // Periodic refresh for live data
   useEffect(() => {

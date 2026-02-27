@@ -906,7 +906,7 @@ const App: React.FC = () => {
         `/api/broker/zerodha/holdings?username=${encodeURIComponent(currentUser)}`,
         `/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`,
         `/api/broker/zerodha/orders?username=${encodeURIComponent(currentUser)}`,
-        `/api/broker/zerodha/margins?username=${encodeURIComponent(currentUser)}`
+        `/api/broker/zerodha/margins/equity?username=${encodeURIComponent(currentUser)}`
       ];
       
       const responses = await Promise.all(urls.map(url => fetch(url)));
@@ -923,7 +923,10 @@ const App: React.FC = () => {
       
       if (holdingsData.status === 'success') setZerodhaHoldings(holdingsData.data);
       if (positionsData.status === 'success') setZerodhaPositions(positionsData.data.net);
-      if (marginsData.status === 'success') setZerodhaMargins(marginsData.data);
+      if (marginsData.status === 'success') {
+        // Since we are fetching equity only, the data is directly the equity object
+        setZerodhaMargins({ equity: marginsData.data });
+      }
       if (ordersData.status === 'success') {
         // Sort orders by time descending
         const sortedOrders = ordersData.data.sort((a: any, b: any) => new Date(b.order_timestamp).getTime() - new Date(a.order_timestamp).getTime());

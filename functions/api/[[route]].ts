@@ -468,6 +468,37 @@ app.get('/broker/zerodha/positions', async (c) => {
   }
 });
 
+app.get('/broker/zerodha/margins/equity', async (c) => {
+  const username = c.req.query('username');
+  if (!username) return c.json({ error: 'Missing username' }, 400);
+
+  if (!c.env.DB) return c.json({ error: 'Database binding missing' }, 500);
+
+  try {
+    const userStmt = c.env.DB.prepare('SELECT id FROM users WHERE username = ?');
+    const user = await userStmt.bind(username.toLowerCase()).first() as { id: number };
+    if (!user) return c.json({ error: 'User not found' }, 404);
+
+    const session = await c.env.DB.prepare('SELECT access_token FROM broker_sessions WHERE user_id = ? AND broker = ?')
+      .bind(user.id, 'zerodha').first() as { access_token: string };
+
+    if (!session) return c.json({ error: 'Broker not connected' }, 401);
+
+    const response = await fetch('https://api.kite.trade/user/margins/equity', {
+      headers: {
+        'X-Kite-Version': '3',
+        'Authorization': `token ${c.env.ZERODHA_API_KEY}:${session.access_token}`
+      }
+    });
+
+    const data = await response.json();
+    return c.json(data);
+  } catch (err: any) {
+    console.error('Margins error:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 app.post('/broker/zerodha/order', async (c) => {
   const { username, ticker, quantity, transaction_type, order_type, product, price } = await c.req.json();
   

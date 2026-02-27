@@ -890,7 +890,10 @@ const App: React.FC = () => {
   }, [currentUser]);
 
   const fetchZerodhaData = useCallback(async () => {
-    if (!currentUser || tradingMode !== 'live') return;
+    if (!currentUser) return;
+    // If we're not in 'live' mode and not in 'z' view, don't fetch
+    if (tradingMode !== 'live' && activeView !== 'z') return;
+    
     setIsBrokerLoading(true);
     try {
       const [holdingsRes, positionsRes, ordersRes, marginsRes] = await Promise.all([
@@ -918,7 +921,7 @@ const App: React.FC = () => {
     } finally {
       setIsBrokerLoading(false);
     }
-  }, [currentUser, tradingMode]);
+  }, [currentUser, tradingMode, activeView]);
 
   // Global check for Zerodha callback in URL (for environments where popups open in same tab)
   useEffect(() => {
@@ -1059,8 +1062,36 @@ const App: React.FC = () => {
     } else if (activeView === 'z') {
       setTradingMode('live');
       localStorage.setItem('stkr_trading_mode', 'live');
+      // Fetch data immediately when switching to Z view
+      fetchZerodhaData();
     }
-  }, [activeView]);
+  }, [activeView, fetchZerodhaData]);
+
+  // Periodic refresh for live data
+  useEffect(() => {
+    if (tradingMode === 'live' && activeView === 'z') {
+      const interval = setInterval(() => {
+        const now = new Date();
+        const utcHours = now.getUTCHours();
+        const utcMinutes = now.getUTCMinutes();
+        
+        let istHours = utcHours + 5;
+        let istMinutes = utcMinutes + 30;
+        if (istMinutes >= 60) {
+          istHours += 1;
+          istMinutes -= 60;
+        }
+        if (istHours >= 24) {
+          istHours -= 24;
+        }
+
+        if (istHours >= 9 && istHours < 16) {
+          fetchZerodhaData();
+        }
+      }, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [tradingMode, activeView, fetchZerodhaData]);
 
   const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');

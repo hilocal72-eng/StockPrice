@@ -468,7 +468,7 @@ app.get('/broker/zerodha/positions', async (c) => {
   }
 });
 
-app.get('/broker/zerodha/margins/equity', async (c) => {
+app.get('/broker/zerodha/margins', async (c) => {
   const username = c.req.query('username');
   if (!username) return c.json({ error: 'Missing username' }, 400);
 
@@ -484,7 +484,7 @@ app.get('/broker/zerodha/margins/equity', async (c) => {
 
     if (!session) return c.json({ error: 'Broker not connected' }, 401);
 
-    const response = await fetch('https://api.kite.trade/user/margins/equity', {
+    const response = await fetch('https://api.kite.trade/user/margins', {
       headers: {
         'X-Kite-Version': '3',
         'Authorization': `token ${c.env.ZERODHA_API_KEY}:${session.access_token}`

@@ -815,6 +815,7 @@ const App: React.FC = () => {
   const [isBrokerLoading, setIsBrokerLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(localStorage.getItem('stkr_current_user'));
   const [showSplash, setShowSplash] = useState(true);
+  const [oneSignalInitialized, setOneSignalInitialized] = useState(false);
 
   // Sync profile to server
   const syncProfile = useCallback(async (username: string, favs: string[], port: PortfolioItem[]) => {
@@ -849,11 +850,12 @@ const App: React.FC = () => {
           serviceWorkerPath: '/OneSignalSDKWorker.js'
         });
         
+        setOneSignalInitialized(true);
         if (currentUser) {
           await OneSignal.login(currentUser);
         }
       } catch (e) {
-        console.error("OneSignal init failed:", e);
+        console.warn("OneSignal init failed (this is expected in preview environments):", e);
       }
     };
     initOneSignal();
@@ -862,11 +864,15 @@ const App: React.FC = () => {
   const handleLogin = (username: string) => {
     setCurrentUser(username);
     localStorage.setItem('stkr_current_user', username);
-    OneSignal.login(username).catch(console.error);
+    if (oneSignalInitialized) {
+      OneSignal.login(username).catch(console.error);
+    }
   };
 
   const handleLogout = () => {
-    OneSignal.logout().catch(console.error);
+    if (oneSignalInitialized) {
+      OneSignal.logout().catch(console.error);
+    }
     setCurrentUser(null);
     localStorage.removeItem('stkr_current_user');
     setFavorites([]);
@@ -906,7 +912,7 @@ const App: React.FC = () => {
         `/api/broker/zerodha/holdings?username=${encodeURIComponent(currentUser)}`,
         `/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`,
         `/api/broker/zerodha/orders?username=${encodeURIComponent(currentUser)}`,
-        `/api/broker/zerodha/margins/equity?username=${encodeURIComponent(currentUser)}`
+        `/api/broker/zerodha/margins?username=${encodeURIComponent(currentUser)}`
       ];
       
       const responses = await Promise.all(urls.map(url => fetch(url)));
@@ -924,8 +930,7 @@ const App: React.FC = () => {
       if (holdingsData.status === 'success') setZerodhaHoldings(holdingsData.data);
       if (positionsData.status === 'success') setZerodhaPositions(positionsData.data.net);
       if (marginsData.status === 'success') {
-        // Since we are fetching equity only, the data is directly the equity object
-        setZerodhaMargins({ equity: marginsData.data });
+        setZerodhaMargins(marginsData.data);
       }
       if (ordersData.status === 'success') {
         // Sort orders by time descending
@@ -1278,6 +1283,10 @@ const App: React.FC = () => {
 
   const handleEnsureSubscription = async () => {
     try {
+      if (!oneSignalInitialized) {
+        console.warn("OneSignal is not initialized. Notifications will not work.");
+        return false;
+      }
       if (!OneSignal.Notifications.permission) {
         await OneSignal.Notifications.requestPermission();
       }

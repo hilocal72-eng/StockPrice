@@ -93,15 +93,23 @@ async function startServer() {
     });
   });
 
-  app.get(["/api/broker/zerodha/margins/equity", "/api/broker/zerodha/margins/equity/"], (req, res) => {
-    console.log(`STKR_LOG: [v1.0.3] Fetching Zerodha equity margins for ${req.query.username}`);
+  app.get(["/api/broker/zerodha/margins", "/api/broker/zerodha/margins/"], (req, res) => {
+    console.log(`STKR_LOG: [v1.0.4] Fetching Zerodha margins for ${req.query.username}`);
     res.json({
       status: 'success',
       data: {
-        enabled: true,
-        net: 45230.50,
-        available: { cash: 45230.50, adhoc_margin: 0, collateral: 0, intraday_payin: 0 },
-        utilised: { debits: 0, exposure: 0, m2m_unrealised: 0, m2m_realised: 0, option_premium: 0, payout: 0, span: 0, holding_sales: 0, turnover: 0, liquid_collateral: 0, stock_collateral: 0, var: 0 }
+        equity: {
+          enabled: true,
+          net: 45230.50,
+          available: { cash: 45230.50, adhoc_margin: 0, collateral: 0, intraday_payin: 0 },
+          utilised: { debits: 0, exposure: 0, m2m_unrealised: 0, m2m_realised: 0, option_premium: 0, payout: 0, span: 0, holding_sales: 0, turnover: 0, liquid_collateral: 0, stock_collateral: 0, var: 0 }
+        },
+        commodity: {
+          enabled: false,
+          net: 0,
+          available: { cash: 0, adhoc_margin: 0, collateral: 0, intraday_payin: 0 },
+          utilised: { debits: 0, exposure: 0, m2m_unrealised: 0, m2m_realised: 0, option_premium: 0, payout: 0, span: 0, holding_sales: 0, turnover: 0, liquid_collateral: 0, stock_collateral: 0, var: 0 }
+        }
       }
     });
   });
@@ -468,7 +476,7 @@ async function sendOneSignalPush(username: string, ticker: string, targetPrice: 
   app.use(express.static(path.join(__dirname, "dist")));
 
   // Handle SPA routing: serve index.html for all non-API routes
-  app.get("*", (req, res) => {
+  app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, "dist", "index.html"));
   });
 

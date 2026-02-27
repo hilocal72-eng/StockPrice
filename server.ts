@@ -229,6 +229,37 @@ async function startServer() {
     }
   });
 
+  // Broker Endpoints (Mock Zerodha)
+  app.post("/api/broker/zerodha/order", (req, res) => {
+    const { username, ticker, quantity, transaction_type, order_type, product, price } = req.body;
+    
+    console.log(`STKR_LOG: Zerodha order attempt by ${username} for ${quantity} ${ticker}`);
+    
+    // Simulate realistic Zerodha margin check
+    // If quantity is too high, simulate insufficient funds
+    const estimatedValue = quantity * (price || 150); // Mock price if market order
+    
+    setTimeout(() => {
+      if (estimatedValue > 50000) {
+        return res.status(400).json({
+          status: 'error',
+          error: 'MarginException',
+          message: `Insufficient funds for this order. Required margin: ₹${estimatedValue.toFixed(2)}. Available: ₹45,230.50`
+        });
+      }
+      
+      // Success case
+      res.json({
+        status: 'success',
+        data: {
+          order_id: `240${Math.floor(Math.random() * 1000000000)}`,
+          status: 'OPEN',
+          message: 'Order placed successfully'
+        }
+      });
+    }, 600); // Add realistic network delay
+  });
+
   // Catch-all for undefined API routes
   app.use("/api", (req, res) => {
     console.log(`STKR_LOG: Unhandled API route: ${req.method} ${req.originalUrl}`);

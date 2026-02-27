@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import OneSignal from 'react-onesignal';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem, TradingMode, ZerodhaHolding, ZerodhaPosition, ZerodhaProfile } from './types.ts';
@@ -31,6 +31,37 @@ const RECOMMENDED_MODELS = [
   { id: 'gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', desc: 'Balanced synthesis', badge: '2.5-FAST', icon: Activity },
   { id: 'gemini-2.5-flash-lite-latest', name: 'Flash Lite', desc: 'Minimal footprint', badge: 'LITE', icon: Cpu },
 ];
+
+let toastCount = 0;
+export const toast = {
+  success: (msg: string) => window.dispatchEvent(new CustomEvent('stkr-toast', { detail: { id: ++toastCount, type: 'success', message: msg } })),
+  error: (msg: string) => window.dispatchEvent(new CustomEvent('stkr-toast', { detail: { id: ++toastCount, type: 'error', message: msg } })),
+  info: (msg: string) => window.dispatchEvent(new CustomEvent('stkr-toast', { detail: { id: ++toastCount, type: 'info', message: msg } })),
+};
+
+const ToastContainer = () => {
+  const [toasts, setToasts] = useState<any[]>([]);
+  useEffect(() => {
+    const handleToast = (e: any) => {
+      setToasts(prev => [...prev, e.detail]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== e.detail.id)), 4000);
+    };
+    window.addEventListener('stkr-toast', handleToast);
+    return () => window.removeEventListener('stkr-toast', handleToast);
+  }, []);
+  return (
+    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+      <AnimatePresence>
+        {toasts.map(t => (
+          <motion.div key={t.id} initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className={`pointer-events-auto px-4 py-3 rounded-xl border shadow-2xl flex items-center gap-3 backdrop-blur-xl ${t.type === 'success' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : t.type === 'error' ? 'bg-rose-500/20 border-rose-500/50 text-rose-400' : 'bg-blue-500/20 border-blue-500/50 text-blue-400'}`}>
+            {t.type === 'success' ? <CheckCircle2 size={16} /> : t.type === 'error' ? <AlertCircle size={16} /> : <Info size={16} />}
+            <span className="text-[10px] font-black uppercase tracking-widest">{t.message}</span>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 const AnimatedMarketBackground: React.FC = () => {
   return (
@@ -524,14 +555,14 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> 
       });
       const data = await res.json();
       if (data.status === 'success') {
-        alert('Order placed successfully!');
+        toast.success('Order placed successfully!');
         onClose();
       } else {
-        alert(`Order failed: ${data.message || data.error || 'Unknown error'}`);
+        toast.error(`Order failed: ${data.message || data.error || 'Unknown error'}`);
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to place order');
+      toast.error('Failed to place order');
     } finally {
       setIsSubmitting(false);
     }
@@ -541,15 +572,16 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> 
     <div className="fixed inset-0 z-[450] flex items-center justify-center p-4">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative w-full max-w-sm glossy-card !border-white/40 rounded-3xl overflow-hidden p-5">
-        <div className="flex justify-between items-center mb-5">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-[#ccff00]/10 blur-[60px] pointer-events-none" />
+        <div className="flex justify-between items-center mb-5 relative z-10">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-pink-600 rounded-lg text-white"><Zap size={14} strokeWidth={3} /></div>
-            <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Zerodha Order</h2>
+            <div className="p-1.5 bg-[#ccff00] rounded-lg text-black"><Zap size={14} strokeWidth={3} /></div>
+            <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Live Order</h2>
           </div>
           <button onClick={onClose} className="p-1.5 text-white/50 hover:text-white transition-colors"><X size={16} /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-3 relative z-10">
           <div className="grid grid-cols-2 gap-2 mb-2">
             <button type="button" onClick={() => setTransactionType('BUY')} className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${transactionType === 'BUY' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-white/5 border-white/10 text-white/40'}`}>BUY</button>
             <button type="button" onClick={() => setTransactionType('SELL')} className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${transactionType === 'SELL' ? 'bg-rose-500/20 border-rose-500/50 text-rose-400' : 'bg-white/5 border-white/10 text-white/40'}`}>SELL</button>
@@ -562,7 +594,7 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> 
               placeholder="e.g. RELIANCE" 
               value={ticker} 
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all uppercase" 
+              className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all uppercase" 
               required
             />
           </div>
@@ -570,14 +602,14 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Product</label>
-              <select value={product} onChange={(e) => setProduct(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all [&>option]:bg-black">
+              <select value={product} onChange={(e) => setProduct(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all [&>option]:bg-black">
                 <option value="CNC">CNC (Long term)</option>
                 <option value="MIS">MIS (Intraday)</option>
               </select>
             </div>
             <div className="space-y-1">
               <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Order Type</label>
-              <select value={orderType} onChange={(e) => setOrderType(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all [&>option]:bg-black">
+              <select value={orderType} onChange={(e) => setOrderType(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all [&>option]:bg-black">
                 <option value="MARKET">Market</option>
                 <option value="LIMIT">Limit</option>
               </select>
@@ -593,7 +625,7 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> 
                 placeholder="1" 
                 value={quantity} 
                 onChange={(e) => setQuantity(e.target.value)}
-                className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all tabular-nums" 
+                className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all tabular-nums" 
                 required
               />
             </div>
@@ -606,14 +638,14 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> 
                   placeholder="0.00" 
                   value={price} 
                   onChange={(e) => setPrice(e.target.value)}
-                  className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-pink-500/80 transition-all tabular-nums" 
+                  className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all tabular-nums" 
                   required
                 />
               </div>
             )}
           </div>
 
-          <button type="submit" disabled={isSubmitting} className="w-full bg-pink-600 hover:bg-pink-500 text-white py-2.5 rounded-lg text-[8px] font-black uppercase tracking-[0.2em] shadow-lg shadow-pink-600/10 transition-all active:scale-95 border border-white/10 mt-2 disabled:opacity-50">
+          <button type="submit" disabled={isSubmitting} className="w-full bg-[#ccff00] hover:bg-[#b3e600] text-black py-2.5 rounded-lg text-[8px] font-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(204,255,0,0.3)] transition-all active:scale-95 border border-[#ccff00]/50 mt-2 disabled:opacity-50">
             {isSubmitting ? 'Placing Order...' : 'Place Order'}
           </button>
         </form>
@@ -766,14 +798,14 @@ const App: React.FC = () => {
             fetchZerodhaData();
             // Clean up URL
             window.history.replaceState({}, document.title, window.location.pathname);
-            alert("Zerodha Connected Successfully!");
+            toast.success("Zerodha Connected Successfully!");
           } else {
             console.error("Zerodha exchange failed:", result.error);
-            alert(`Connection failed: ${result.error}`);
+            toast.error(`Connection failed: ${result.error}`);
           }
         } catch (err) {
           console.error("Exchange error:", err);
-          alert("Connection failed: Network or server error.");
+          toast.error("Connection failed: Network or server error.");
         } finally {
           setIsBrokerLoading(false);
         }
@@ -808,13 +840,14 @@ const App: React.FC = () => {
             fetchBrokerStatus();
             fetchZerodhaData();
             authWindow?.close();
+            toast.success("Zerodha Connected Successfully!");
           } else {
             console.error("Zerodha exchange failed:", result.error);
-            alert(`Connection failed: ${result.error}`);
+            toast.error(`Connection failed: ${result.error}`);
           }
         } catch (err) {
           console.error("Exchange error:", err);
-          alert("Connection failed: Network or server error.");
+          toast.error("Connection failed: Network or server error.");
         } finally {
           window.removeEventListener('message', handleMessage);
           window.removeEventListener('storage', handleStorage);
@@ -839,7 +872,7 @@ const App: React.FC = () => {
       window.addEventListener('storage', handleStorage);
     } catch (e) {
       console.error("Failed to start Zerodha auth:", e);
-      alert("Failed to initiate connection. Please check your API keys.");
+      toast.error("Failed to initiate connection. Please check your API keys.");
     }
   };
 
@@ -1167,6 +1200,7 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col md:flex-row bg-[#010203] relative overflow-hidden text-[10px]">
       <AnimatedMarketBackground />
+      <ToastContainer />
       
       <AnimatePresence>
         {showSplash && <SplashScreen />}
@@ -1281,28 +1315,12 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 sm:gap-4 shrink-0">
-                    <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-0.5 sm:p-1 gap-0.5 sm:gap-1">
-                      <button 
-                        onClick={() => toggleTradingMode()}
-                        className={`px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 sm:gap-2 ${tradingMode === 'paper' ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                      >
-                        <Shield size={10} strokeWidth={3} />
-                        <span className="hidden sm:inline">Paper</span>
-                      </button>
-                      <button 
-                        onClick={() => toggleTradingMode()}
-                        className={`px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 sm:gap-2 ${tradingMode === 'live' ? 'bg-rose-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                      >
-                        <Zap size={10} strokeWidth={3} />
-                        <span className="hidden sm:inline">Live</span>
-                      </button>
-                    </div>
                     <button 
                       onClick={() => setIsBrokerModalOpen(true)}
-                      className={`p-1.5 sm:p-2 rounded-lg border transition-all shrink-0 ${brokerStatus.connected ? 'bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.2)]' : 'bg-white/5 border-white/10 text-white/30 hover:text-white/60'}`}
+                      className={`p-1.5 sm:p-2 rounded-lg border transition-all shrink-0 flex items-center justify-center ${brokerStatus.connected ? 'bg-[#ccff00]/20 border-[#ccff00]/40 text-[#ccff00] shadow-[0_0_10px_rgba(204,255,0,0.2)]' : 'bg-white/5 border-white/10 text-white/30 hover:text-white/60'}`}
                       title="Zerodha"
                     >
-                      <Briefcase size={14} className="sm:w-4 sm:h-4" />
+                      <span className="font-black text-xs sm:text-sm leading-none w-3.5 h-3.5 sm:w-4 sm:h-4 flex items-center justify-center">Z</span>
                     </button>
                     <button 
                       onClick={handleLogout} 
@@ -1369,13 +1387,30 @@ const App: React.FC = () => {
             </div>
           ) : activeView === 'trade' ? (
             <div className="space-y-4 animate-in fade-in duration-500">
+               <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-full max-w-xs mx-auto mb-2">
+                 <button 
+                   onClick={() => { if (tradingMode !== 'paper') toggleTradingMode(); }}
+                   className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tradingMode === 'paper' ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                 >
+                   <Shield size={12} strokeWidth={3} />
+                   Paper
+                 </button>
+                 <button 
+                   onClick={() => { if (tradingMode !== 'live') toggleTradingMode(); }}
+                   className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tradingMode === 'live' ? 'bg-[#ccff00] text-black shadow-[0_0_15px_rgba(204,255,0,0.3)]' : 'text-white/40 hover:text-white/60'}`}
+                 >
+                   <Zap size={12} strokeWidth={3} />
+                   Live
+                 </button>
+               </div>
+
                <div className="flex justify-between items-center gap-2">
                   <div className="flex items-center gap-2">
-                    <div className={`p-2 rounded-lg border shadow-lg transition-all ${tradingMode === 'live' ? 'bg-rose-600/20 text-rose-500 border-rose-500/30' : 'bg-pink-600/20 text-pink-500 border-pink-500/30'}`}>
+                    <div className={`p-2 rounded-lg border shadow-lg transition-all ${tradingMode === 'live' ? 'bg-[#ccff00]/20 text-[#ccff00] border-[#ccff00]/30' : 'bg-pink-600/20 text-pink-500 border-pink-500/30'}`}>
                       <Briefcase size={16} strokeWidth={3} />
                     </div>
                     <div className="flex flex-col">
-                      <h2 className="text-[11px] font-black text-white uppercase tracking-widest leading-none">
+                      <h2 className={`text-[11px] font-black uppercase tracking-widest leading-none ${tradingMode === 'live' ? 'text-[#ccff00]' : 'text-white'}`}>
                         {tradingMode === 'live' ? 'LIVE PORTFOLIO' : 'PAPER PORTFOLIO'}
                       </h2>
                       <span className="text-[7px] font-bold text-white/50 uppercase tracking-[0.2em] mt-0.5">
@@ -1391,7 +1426,7 @@ const App: React.FC = () => {
                     </button>
                   ) : (
                     <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                      <button onClick={() => setIsZerodhaTradeModalOpen(true)} className="px-2.5 sm:px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95">
+                      <button onClick={() => setIsZerodhaTradeModalOpen(true)} className="px-2.5 sm:px-4 py-2 bg-[#ccff00] hover:bg-[#b3e600] text-black rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-[0_0_10px_rgba(204,255,0,0.3)] border border-[#ccff00]/50 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95">
                         <Zap size={10} className="w-2.5 h-2.5 sm:w-3 sm:h-3" strokeWidth={3} />
                         TRADE
                       </button>

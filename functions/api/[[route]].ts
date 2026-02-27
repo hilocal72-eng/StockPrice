@@ -316,7 +316,10 @@ app.get('/broker/zerodha/callback', async (c) => {
 
             document.getElementById('manualSync').onclick = () => {
               attemptSync();
-              alert('Sync signal sent. Please check your main window.');
+              const btn = document.getElementById('manualSync');
+              btn.innerText = 'Sync Signal Sent';
+              btn.style.background = '#10b981';
+              btn.style.color = '#fff';
             };
           </script>
         </div>

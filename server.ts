@@ -40,6 +40,15 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS broker_sessions (
+    user_id INTEGER PRIMARY KEY,
+    broker TEXT NOT NULL,
+    access_token TEXT NOT NULL,
+    public_token TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
 `);
 console.log("Database initialized");
 
@@ -258,6 +267,57 @@ async function startServer() {
         }
       });
     }, 600); // Add realistic network delay
+  });
+
+  app.get("/api/broker/zerodha/orders", (req, res) => {
+    // Mock orders data for testing
+    res.json({
+      status: 'success',
+      data: [
+        {
+          order_id: "24010100000001",
+          tradingsymbol: "RELIANCE",
+          exchange: "NSE",
+          transaction_type: "BUY",
+          order_type: "LIMIT",
+          quantity: 10,
+          filled_quantity: 0,
+          price: 2900.50,
+          average_price: 0,
+          status: "OPEN",
+          order_timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+          product: "CNC"
+        },
+        {
+          order_id: "24010100000002",
+          tradingsymbol: "TCS",
+          exchange: "NSE",
+          transaction_type: "SELL",
+          order_type: "MARKET",
+          quantity: 5,
+          filled_quantity: 5,
+          price: 0,
+          average_price: 3850.25,
+          status: "COMPLETE",
+          order_timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+          product: "MIS"
+        },
+        {
+          order_id: "24010100000003",
+          tradingsymbol: "HDFCBANK",
+          exchange: "NSE",
+          transaction_type: "BUY",
+          order_type: "LIMIT",
+          quantity: 20,
+          filled_quantity: 0,
+          price: 1400.00,
+          average_price: 0,
+          status: "REJECTED",
+          order_timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+          product: "CNC"
+        }
+      ]
+    });
   });
 
   // Catch-all for undefined API routes

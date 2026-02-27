@@ -526,7 +526,7 @@ const PriceActionTable: React.FC<{ data: DayAction[] }> = ({ data }) => {
   );
 };
 
-const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> = ({ onClose, currentUser }) => {
+const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; onSuccess: () => void }> = ({ onClose, currentUser, onSuccess }) => {
   const [ticker, setTicker] = useState('');
   const [quantity, setQuantity] = useState('');
   const [transactionType, setTransactionType] = useState('BUY');
@@ -556,6 +556,7 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string }> 
       const data = await res.json();
       if (data.status === 'success') {
         toast.success('Order placed successfully!');
+        onSuccess();
         onClose();
       } else {
         toast.error(`Order failed: ${data.message || data.error || 'Unknown error'}`);
@@ -676,6 +677,7 @@ const App: React.FC = () => {
   const [brokerStatus, setBrokerStatus] = useState<{ connected: boolean; broker?: string; last_sync?: string }>({ connected: false });
   const [zerodhaHoldings, setZerodhaHoldings] = useState<ZerodhaHolding[]>([]);
   const [zerodhaPositions, setZerodhaPositions] = useState<ZerodhaPosition[]>([]);
+  const [zerodhaOrders, setZerodhaOrders] = useState<any[]>([]);
   const [isBrokerLoading, setIsBrokerLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(localStorage.getItem('stkr_current_user'));
   const [showSplash, setShowSplash] = useState(true);
@@ -757,16 +759,23 @@ const App: React.FC = () => {
     if (!currentUser || tradingMode !== 'live') return;
     setIsBrokerLoading(true);
     try {
-      const [holdingsRes, positionsRes] = await Promise.all([
+      const [holdingsRes, positionsRes, ordersRes] = await Promise.all([
         fetch(`/api/broker/zerodha/holdings?username=${encodeURIComponent(currentUser)}`),
-        fetch(`/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`)
+        fetch(`/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`),
+        fetch(`/api/broker/zerodha/orders?username=${encodeURIComponent(currentUser)}`)
       ]);
       
       const holdingsData = await holdingsRes.json();
       const positionsData = await positionsRes.json();
+      const ordersData = await ordersRes.json();
       
       if (holdingsData.status === 'success') setZerodhaHoldings(holdingsData.data);
       if (positionsData.status === 'success') setZerodhaPositions(positionsData.data.net);
+      if (ordersData.status === 'success') {
+        // Sort orders by time descending
+        const sortedOrders = ordersData.data.sort((a: any, b: any) => new Date(b.order_timestamp).getTime() - new Date(a.order_timestamp).getTime());
+        setZerodhaOrders(sortedOrders);
+      }
     } catch (e) {
       console.error("Failed to fetch Zerodha data:", e);
     } finally {
@@ -909,6 +918,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (tradingMode === 'live') {
       fetchZerodhaData();
+      const interval = setInterval(fetchZerodhaData, 5000);
+      return () => clearInterval(interval);
     }
   }, [tradingMode, fetchZerodhaData]);
   const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
@@ -1211,7 +1222,7 @@ const App: React.FC = () => {
         {selectedSentiment && <SentimentDetailModal ticker={selectedSentiment.ticker} analysis={selectedSentiment.analysis} onClose={() => setSelectedSentiment(null)} />}
         {isAlertModalOpen && stockData && <AlertModal ticker={stockData.info.ticker} currentPrice={stockData.info.currentPrice} onClose={() => setIsAlertModalOpen(false)} onSave={handleSaveAlert} />}
         {isAddTradeModalOpen && <AddTradeModal onClose={() => setIsAddTradeModalOpen(false)} onAdd={handleAddPortfolioItem} />}
-        {isZerodhaTradeModalOpen && currentUser && <ZerodhaTradeModal onClose={() => setIsZerodhaTradeModalOpen(false)} currentUser={currentUser} />}
+        {isZerodhaTradeModalOpen && currentUser && <ZerodhaTradeModal onClose={() => setIsZerodhaTradeModalOpen(false)} currentUser={currentUser} onSuccess={fetchZerodhaData} />}
         {isModelSettingsOpen && <ModelSettingsModal onClose={() => setIsModelSettingsOpen(false)} />}
         {isAIModalOpen && stockData && (
           <AIIntelligenceModal 
@@ -1590,6 +1601,67 @@ const App: React.FC = () => {
                                 </td>
                                 <td className="px-3 py-3 text-center">
                                   <span className="text-[8px] font-black text-white/40 uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 border border-white/10">{item.product}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                 </div>
+               )}
+
+               {tradingMode === 'live' && zerodhaOrders.length > 0 && (
+                 <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40 mt-3.5">
+                    <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
+                      <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">ZERODHA ORDERS</h3>
+                    </div>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left border-collapse min-w-[500px]">
+                        <thead>
+                          <tr className="bg-white/[0.02] border-b border-white/20">
+                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">Time</th>
+                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
+                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Type</th>
+                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Qty</th>
+                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Price</th>
+                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/10">
+                          {zerodhaOrders.map((order, i) => {
+                            const isBuy = order.transaction_type === 'BUY';
+                            let statusColor = 'text-white/50 border-white/10 bg-white/5';
+                            if (order.status === 'COMPLETE') statusColor = 'text-emerald-400 border-emerald-400/20 bg-emerald-500/10';
+                            if (order.status === 'REJECTED' || order.status === 'CANCELLED') statusColor = 'text-rose-400 border-rose-400/20 bg-rose-500/10';
+                            if (order.status === 'OPEN' || order.status === 'TRIGGER PENDING') statusColor = 'text-amber-400 border-amber-400/20 bg-amber-500/10';
+
+                            return (
+                              <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
+                                <td className="px-3 py-3 border-r border-white/10 text-[9px] text-white/60 whitespace-nowrap">
+                                  {new Date(order.order_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </td>
+                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(order.tradingsymbol)}>
+                                  <div className="flex flex-col">
+                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{order.tradingsymbol}</span>
+                                    <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{order.exchange}</span>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-3 text-right border-r border-white/10">
+                                  <span className={`text-[9px] font-black uppercase tracking-wider ${isBuy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {order.transaction_type}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">
+                                  {order.filled_quantity}/{order.quantity}
+                                </td>
+                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">
+                                  {order.average_price > 0 ? order.average_price.toFixed(2) : order.price.toFixed(2)}
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${statusColor}`}>
+                                    {order.status}
+                                  </span>
                                 </td>
                               </tr>
                             );

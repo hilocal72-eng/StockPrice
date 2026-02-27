@@ -534,6 +534,21 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
   const [product, setProduct] = useState('CNC');
   const [price, setPrice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const debounceTimeout = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (ticker.trim() && isSearchFocused) {
+      debounceTimeout.current = window.setTimeout(async () => {
+        const results = await searchStocks(ticker);
+        setSearchResults(results);
+      }, 300);
+    } else {
+      setSearchResults([]);
+    }
+    return () => { if (debounceTimeout.current) clearTimeout(debounceTimeout.current); };
+  }, [ticker, isSearchFocused]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -571,85 +586,155 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
 
   return (
     <div className="fixed inset-0 z-[450] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative w-full max-w-sm glossy-card !border-white/40 rounded-3xl overflow-hidden p-5">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-[#ccff00]/10 blur-[60px] pointer-events-none" />
-        <div className="flex justify-between items-center mb-5 relative z-10">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-[#ccff00] rounded-lg text-black"><Zap size={14} strokeWidth={3} /></div>
-            <h2 className="text-[10px] font-black text-white uppercase tracking-widest">Live Order</h2>
-          </div>
-          <button onClick={onClose} className="p-1.5 text-white/50 hover:text-white transition-colors"><X size={16} /></button>
-        </div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/90 backdrop-blur-2xl" />
+      <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} className="relative w-full max-w-md bg-teal-950/80 backdrop-blur-xl border border-teal-500/30 rounded-3xl overflow-hidden shadow-[0_0_40px_rgba(20,184,166,0.2)]">
+        <div className={`absolute top-0 left-0 w-full h-1 ${transactionType === 'BUY' ? 'bg-teal-400' : 'bg-rose-400'} transition-colors duration-300`} />
+        
+        <div className="absolute top-0 right-0 w-64 h-64 bg-teal-500/10 blur-[80px] pointer-events-none rounded-full" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-teal-600/10 blur-[60px] pointer-events-none rounded-full" />
 
-        <form onSubmit={handleSubmit} className="space-y-3 relative z-10">
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <button type="button" onClick={() => setTransactionType('BUY')} className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${transactionType === 'BUY' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-white/5 border-white/10 text-white/40'}`}>BUY</button>
-            <button type="button" onClick={() => setTransactionType('SELL')} className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${transactionType === 'SELL' ? 'bg-rose-500/20 border-rose-500/50 text-rose-400' : 'bg-white/5 border-white/10 text-white/40'}`}>SELL</button>
-          </div>
-
-          <div className="relative">
-            <label className="text-[7px] font-black uppercase text-white/70 tracking-widest mb-1 block">Trading Symbol</label>
-            <input 
-              type="text" 
-              placeholder="e.g. RELIANCE" 
-              value={ticker} 
-              onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all uppercase" 
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Product</label>
-              <select value={product} onChange={(e) => setProduct(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all [&>option]:bg-black">
-                <option value="CNC">CNC (Long term)</option>
-                <option value="MIS">MIS (Intraday)</option>
-              </select>
+        <div className="p-6 relative z-10">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl flex items-center justify-center transition-colors duration-300 ${transactionType === 'BUY' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30 shadow-inner' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30 shadow-inner'}`}>
+                <Zap size={18} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-teal-50 tracking-tight">Live Order</h2>
+                <p className="text-[10px] font-medium text-teal-200/60 uppercase tracking-widest">Zerodha Integration</p>
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Order Type</label>
-              <select value={orderType} onChange={(e) => setOrderType(e.target.value)} className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all [&>option]:bg-black">
-                <option value="MARKET">Market</option>
-                <option value="LIMIT">Limit</option>
-              </select>
-            </div>
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-teal-800/50 text-teal-200/50 hover:text-teal-100 transition-colors border border-transparent hover:border-teal-500/30"><X size={18} /></button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Qty</label>
-              <input 
-                type="number" 
-                min="1"
-                placeholder="1" 
-                value={quantity} 
-                onChange={(e) => setQuantity(e.target.value)}
-                className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all tabular-nums" 
-                required
-              />
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="flex p-1 bg-teal-900/40 rounded-xl border border-teal-500/20 shadow-inner">
+              <button type="button" onClick={() => setTransactionType('BUY')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${transactionType === 'BUY' ? 'bg-gradient-to-b from-teal-400 to-teal-600 text-white shadow-[0_4px_15px_rgba(20,184,166,0.4)] border border-teal-300/50' : 'text-teal-200/50 hover:text-teal-100'}`}>BUY</button>
+              <button type="button" onClick={() => setTransactionType('SELL')} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${transactionType === 'SELL' ? 'bg-gradient-to-b from-rose-400 to-rose-600 text-white shadow-[0_4px_15px_rgba(244,63,94,0.4)] border border-rose-300/50' : 'text-teal-200/50 hover:text-teal-100'}`}>SELL</button>
             </div>
-            {orderType === 'LIMIT' && (
-              <div className="space-y-1">
-                <label className="text-[7px] font-black uppercase text-white/70 tracking-widest block">Price</label>
+
+            <div className="relative z-50">
+              <label className="text-[10px] font-bold uppercase text-teal-200/70 tracking-widest mb-1.5 block">Trading Symbol</label>
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-teal-200/50" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Search stock (e.g. RELIANCE)" 
+                  value={ticker} 
+                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                  className="w-full bg-teal-900/30 backdrop-blur-md border border-teal-500/30 rounded-xl py-3 pl-10 pr-4 text-sm font-bold text-teal-50 focus:outline-none focus:border-teal-400 focus:bg-teal-800/50 transition-all uppercase placeholder-teal-200/30 shadow-inner" 
+                  required
+                  autoComplete="off"
+                />
+              </div>
+              
+              <AnimatePresence>
+                {isSearchFocused && searchResults.length > 0 && (
+                  <motion.ul 
+                    initial={{ opacity: 0, y: -5 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    exit={{ opacity: 0, y: -5 }} 
+                    className="absolute top-full left-0 right-0 mt-2 bg-teal-950 border border-teal-500/30 rounded-xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.5)] max-h-48 overflow-y-auto custom-scrollbar backdrop-blur-xl"
+                  >
+                    {searchResults.map((result) => (
+                      <li 
+                        key={result.symbol} 
+                        onMouseDown={() => {
+                          setTicker(result.symbol);
+                          setSearchResults([]);
+                          setIsSearchFocused(false);
+                        }} 
+                        className="px-4 py-3 hover:bg-teal-800/50 cursor-pointer transition-colors border-b border-teal-500/10 last:border-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-teal-50 uppercase">{result.symbol}</span>
+                          <span className="text-[9px] font-bold text-teal-200/60 px-2 py-0.5 bg-teal-900/50 rounded uppercase tracking-wider border border-teal-500/20">{result.exchange}</span>
+                        </div>
+                        <p className="text-[10px] text-teal-200/50 mt-0.5 truncate">{result.name}</p>
+                      </li>
+                    ))}
+                  </motion.ul>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-teal-200/70 tracking-widest block">Product</label>
+                <div className="relative">
+                  <select value={product} onChange={(e) => setProduct(e.target.value)} className="w-full appearance-none bg-teal-900/30 backdrop-blur-md border border-teal-500/30 rounded-xl px-4 py-3 text-sm font-bold text-teal-50 focus:outline-none focus:border-teal-400 focus:bg-teal-800/50 transition-all shadow-inner [&>option]:bg-teal-950">
+                    <option value="CNC">CNC (Long term)</option>
+                    <option value="MIS">MIS (Intraday)</option>
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-teal-200/50">
+                    <ChevronDown size={14} />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-teal-200/70 tracking-widest block">Order Type</label>
+                <div className="relative">
+                  <select value={orderType} onChange={(e) => setOrderType(e.target.value)} className="w-full appearance-none bg-teal-900/30 backdrop-blur-md border border-teal-500/30 rounded-xl px-4 py-3 text-sm font-bold text-teal-50 focus:outline-none focus:border-teal-400 focus:bg-teal-800/50 transition-all shadow-inner [&>option]:bg-teal-950">
+                    <option value="MARKET">Market</option>
+                    <option value="LIMIT">Limit</option>
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-teal-200/50">
+                    <ChevronDown size={14} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-teal-200/70 tracking-widest block">Quantity</label>
+                <input 
+                  type="number" 
+                  min="1"
+                  placeholder="1" 
+                  value={quantity} 
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="w-full bg-teal-900/30 backdrop-blur-md border border-teal-500/30 rounded-xl px-4 py-3 text-sm font-bold text-teal-50 focus:outline-none focus:border-teal-400 focus:bg-teal-800/50 transition-all tabular-nums placeholder-teal-200/30 shadow-inner" 
+                  required
+                />
+              </div>
+              <div className={`space-y-1.5 transition-opacity duration-300 ${orderType === 'LIMIT' ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
+                <label className="text-[10px] font-bold uppercase text-teal-200/70 tracking-widest block">Price</label>
                 <input 
                   type="number" 
                   step="0.05" 
                   placeholder="0.00" 
                   value={price} 
                   onChange={(e) => setPrice(e.target.value)}
-                  className="w-full bg-white/[0.04] border border-white/20 rounded-lg px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-[#ccff00]/80 transition-all tabular-nums" 
-                  required
+                  className="w-full bg-teal-900/30 backdrop-blur-md border border-teal-500/30 rounded-xl px-4 py-3 text-sm font-bold text-teal-50 focus:outline-none focus:border-teal-400 focus:bg-teal-800/50 transition-all tabular-nums placeholder-teal-200/30 shadow-inner" 
+                  required={orderType === 'LIMIT'}
+                  disabled={orderType !== 'LIMIT'}
                 />
               </div>
-            )}
-          </div>
+            </div>
 
-          <button type="submit" disabled={isSubmitting} className="w-full bg-[#ccff00] hover:bg-[#b3e600] text-black py-2.5 rounded-lg text-[8px] font-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(204,255,0,0.3)] transition-all active:scale-95 border border-[#ccff00]/50 mt-2 disabled:opacity-50">
-            {isSubmitting ? 'Placing Order...' : 'Place Order'}
-          </button>
-        </form>
+            <button 
+              type="submit" 
+              disabled={isSubmitting} 
+              className={`w-full py-4 rounded-xl text-sm font-black uppercase tracking-[0.15em] transition-all active:scale-[0.98] mt-4 disabled:opacity-50 flex items-center justify-center gap-2 ${
+                transactionType === 'BUY' 
+                  ? 'bg-gradient-to-b from-teal-400 to-teal-600 hover:from-teal-300 hover:to-teal-500 text-white shadow-[0_4px_20px_rgba(20,184,166,0.5)] border border-teal-300/50' 
+                  : 'bg-gradient-to-b from-rose-400 to-rose-600 hover:from-rose-300 hover:to-rose-500 text-white shadow-[0_4px_20px_rgba(244,63,94,0.5)] border border-rose-300/50'
+              }`}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <span>Place {transactionType} Order</span>
+              )}
+            </button>
+          </form>
+        </div>
       </motion.div>
     </div>
   );
@@ -918,7 +1003,29 @@ const App: React.FC = () => {
   useEffect(() => {
     if (tradingMode === 'live') {
       fetchZerodhaData();
-      const interval = setInterval(fetchZerodhaData, 5000);
+      const interval = setInterval(() => {
+        // Check if current time is between 9 AM and 4 PM IST (Indian Standard Time)
+        // IST is UTC+5:30
+        const now = new Date();
+        const utcHours = now.getUTCHours();
+        const utcMinutes = now.getUTCMinutes();
+        
+        // Convert UTC to IST
+        let istHours = utcHours + 5;
+        let istMinutes = utcMinutes + 30;
+        if (istMinutes >= 60) {
+          istHours += 1;
+          istMinutes -= 60;
+        }
+        if (istHours >= 24) {
+          istHours -= 24;
+        }
+
+        // 9 AM to 4 PM (16:00) IST
+        if (istHours >= 9 && istHours < 16) {
+          fetchZerodhaData();
+        }
+      }, 60000); // 1 minute
       return () => clearInterval(interval);
     }
   }, [tradingMode, fetchZerodhaData]);
@@ -1625,7 +1732,8 @@ const App: React.FC = () => {
                             <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Type</th>
                             <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Qty</th>
                             <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Price</th>
-                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Status</th>
+                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center border-r border-white/10">Status</th>
+                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/10">
@@ -1635,6 +1743,8 @@ const App: React.FC = () => {
                             if (order.status === 'COMPLETE') statusColor = 'text-emerald-400 border-emerald-400/20 bg-emerald-500/10';
                             if (order.status === 'REJECTED' || order.status === 'CANCELLED') statusColor = 'text-rose-400 border-rose-400/20 bg-rose-500/10';
                             if (order.status === 'OPEN' || order.status === 'TRIGGER PENDING') statusColor = 'text-amber-400 border-amber-400/20 bg-amber-500/10';
+
+                            const canCancel = order.status === 'OPEN' || order.status === 'TRIGGER PENDING';
 
                             return (
                               <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
@@ -1658,10 +1768,35 @@ const App: React.FC = () => {
                                 <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">
                                   {order.average_price > 0 ? order.average_price.toFixed(2) : order.price.toFixed(2)}
                                 </td>
-                                <td className="px-3 py-3 text-center">
+                                <td className="px-3 py-3 text-center border-r border-white/10">
                                   <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${statusColor}`}>
                                     {order.status}
                                   </span>
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  {canCancel ? (
+                                    <button 
+                                      onClick={async () => {
+                                        try {
+                                          const res = await fetch(`/api/broker/zerodha/order/${order.order_id}`, { method: 'DELETE' });
+                                          const data = await res.json();
+                                          if (data.status === 'success') {
+                                            toast.success('Order cancelled');
+                                            fetchZerodhaData();
+                                          } else {
+                                            toast.error(data.message || 'Failed to cancel');
+                                          }
+                                        } catch (e) {
+                                          toast.error('Error cancelling order');
+                                        }
+                                      }}
+                                      className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                  ) : (
+                                    <span className="text-[8px] text-white/20 uppercase tracking-widest">-</span>
+                                  )}
                                 </td>
                               </tr>
                             );

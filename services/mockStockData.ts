@@ -30,15 +30,35 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
     const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
     if (!response.ok) return [];
     const data = await response.json();
-    if (!data.quotes || data.quotes.length === 0) return [];
+    
+    let results: SearchResult[] = [];
+    if (data.quotes && data.quotes.length > 0) {
+      results = data.quotes
+        .filter((q: any) => q.symbol && (q.longname || q.shortname))
+        .map((q: any) => ({
+          symbol: q.symbol,
+          name: q.longname || q.shortname,
+          exchange: q.exchange,
+        }));
+    }
 
-    return data.quotes
-      .filter((q: any) => q.symbol && (q.longname || q.shortname))
-      .map((q: any) => ({
-        symbol: q.symbol,
-        name: q.longname || q.shortname,
-        exchange: q.exchange,
-      }));
+    // Mock NFO segment data for Zerodha
+    const upperQuery = query.toUpperCase();
+    const mockNFO = [
+      { symbol: 'NIFTY24FEB22000CE', name: 'NIFTY 24 FEB 22000 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY24FEB22000PE', name: 'NIFTY 24 FEB 22000 PE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY24FEB46000CE', name: 'BANKNIFTY 24 FEB 46000 CE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY24FEB46000PE', name: 'BANKNIFTY 24 FEB 46000 PE', exchange: 'NFO' },
+      { symbol: 'NIFTY24FEBFUT', name: 'NIFTY 24 FEB FUT', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY24FEBFUT', name: 'BANKNIFTY 24 FEB FUT', exchange: 'NFO' },
+    ];
+    
+    const filteredNFO = mockNFO.filter(nfo => nfo.symbol.includes(upperQuery) || nfo.name.includes(upperQuery));
+    
+    // Always return NFO results if they match, or just prepend them if query is empty (which is caught above)
+    results = [...filteredNFO, ...results];
+
+    return results;
   } catch (e) {
     console.error('Search API error:', e);
     return [];

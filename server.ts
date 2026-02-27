@@ -239,6 +239,51 @@ async function startServer() {
   });
 
   // Broker Endpoints (Mock Zerodha)
+  let mockOrders = [
+    {
+      order_id: "24010100000001",
+      tradingsymbol: "RELIANCE",
+      exchange: "NSE",
+      transaction_type: "BUY",
+      order_type: "LIMIT",
+      quantity: 10,
+      filled_quantity: 0,
+      price: 2900.50,
+      average_price: 0,
+      status: "OPEN",
+      order_timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+      product: "CNC"
+    },
+    {
+      order_id: "24010100000002",
+      tradingsymbol: "TCS",
+      exchange: "NSE",
+      transaction_type: "SELL",
+      order_type: "MARKET",
+      quantity: 5,
+      filled_quantity: 5,
+      price: 0,
+      average_price: 3850.25,
+      status: "COMPLETE",
+      order_timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+      product: "MIS"
+    },
+    {
+      order_id: "24010100000003",
+      tradingsymbol: "HDFCBANK",
+      exchange: "NSE",
+      transaction_type: "BUY",
+      order_type: "LIMIT",
+      quantity: 20,
+      filled_quantity: 0,
+      price: 1400.00,
+      average_price: 0,
+      status: "REJECTED",
+      order_timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+      product: "CNC"
+    }
+  ];
+
   app.post("/api/broker/zerodha/order", (req, res) => {
     const { username, ticker, quantity, transaction_type, order_type, product, price } = req.body;
     
@@ -258,10 +303,27 @@ async function startServer() {
       }
       
       // Success case
+      const orderId = `240${Math.floor(Math.random() * 1000000000)}`;
+      const newOrder = {
+        order_id: orderId,
+        tradingsymbol: ticker,
+        exchange: "NSE",
+        transaction_type,
+        order_type,
+        quantity,
+        filled_quantity: 0,
+        price: price || 0,
+        average_price: 0,
+        status: "OPEN",
+        order_timestamp: new Date().toISOString(),
+        product
+      };
+      mockOrders.unshift(newOrder);
+
       res.json({
         status: 'success',
         data: {
-          order_id: `240${Math.floor(Math.random() * 1000000000)}`,
+          order_id: orderId,
           status: 'OPEN',
           message: 'Order placed successfully'
         }
@@ -270,53 +332,32 @@ async function startServer() {
   });
 
   app.get("/api/broker/zerodha/orders", (req, res) => {
-    // Mock orders data for testing
     res.json({
       status: 'success',
-      data: [
-        {
-          order_id: "24010100000001",
-          tradingsymbol: "RELIANCE",
-          exchange: "NSE",
-          transaction_type: "BUY",
-          order_type: "LIMIT",
-          quantity: 10,
-          filled_quantity: 0,
-          price: 2900.50,
-          average_price: 0,
-          status: "OPEN",
-          order_timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-          product: "CNC"
-        },
-        {
-          order_id: "24010100000002",
-          tradingsymbol: "TCS",
-          exchange: "NSE",
-          transaction_type: "SELL",
-          order_type: "MARKET",
-          quantity: 5,
-          filled_quantity: 5,
-          price: 0,
-          average_price: 3850.25,
-          status: "COMPLETE",
-          order_timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-          product: "MIS"
-        },
-        {
-          order_id: "24010100000003",
-          tradingsymbol: "HDFCBANK",
-          exchange: "NSE",
-          transaction_type: "BUY",
-          order_type: "LIMIT",
-          quantity: 20,
-          filled_quantity: 0,
-          price: 1400.00,
-          average_price: 0,
-          status: "REJECTED",
-          order_timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-          product: "CNC"
-        }
-      ]
+      data: mockOrders
+    });
+  });
+
+  app.delete("/api/broker/zerodha/order/:order_id", (req, res) => {
+    const { order_id } = req.params;
+    const orderIndex = mockOrders.findIndex(o => o.order_id === order_id);
+    
+    if (orderIndex === -1) {
+      return res.status(404).json({ status: 'error', message: 'Order not found' });
+    }
+
+    if (mockOrders[orderIndex].status !== 'OPEN' && mockOrders[orderIndex].status !== 'TRIGGER PENDING') {
+      return res.status(400).json({ status: 'error', message: 'Order cannot be cancelled' });
+    }
+
+    mockOrders[orderIndex].status = 'CANCELLED';
+    
+    res.json({
+      status: 'success',
+      data: {
+        order_id,
+        status: 'CANCELLED'
+      }
     });
   });
 

@@ -892,6 +892,7 @@ const App: React.FC = () => {
 
   const fetchZerodhaData = useCallback(async () => {
     if (!currentUser) return;
+    console.log("STKR_LOG: fetchZerodhaData v1.0.1 called");
     // If we're not in 'live' mode and not in 'z' view, don't fetch
     if (tradingMode !== 'live' && activeView !== 'z') {
       console.log("STKR_LOG: Skipping Zerodha fetch - not in live mode/Z view");
@@ -901,23 +902,24 @@ const App: React.FC = () => {
     console.log("STKR_LOG: Fetching Zerodha data...");
     setIsBrokerLoading(true);
     try {
-      const [holdingsRes, positionsRes, ordersRes, marginsRes] = await Promise.all([
-        fetch(`/api/broker/zerodha/holdings?username=${encodeURIComponent(currentUser)}`),
-        fetch(`/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`),
-        fetch(`/api/broker/zerodha/orders?username=${encodeURIComponent(currentUser)}`),
-        fetch(`/api/broker/zerodha/margins?username=${encodeURIComponent(currentUser)}`)
-      ]);
+      const urls = [
+        `/api/broker/zerodha/holdings?username=${encodeURIComponent(currentUser)}`,
+        `/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`,
+        `/api/broker/zerodha/orders?username=${encodeURIComponent(currentUser)}`,
+        `/api/broker/zerodha/margins?username=${encodeURIComponent(currentUser)}`
+      ];
       
-      if (!holdingsRes.ok || !positionsRes.ok || !ordersRes.ok || !marginsRes.ok) {
-        throw new Error("One or more Zerodha API calls failed");
+      const responses = await Promise.all(urls.map(url => fetch(url)));
+      
+      for (let i = 0; i < responses.length; i++) {
+        if (!responses[i].ok) {
+          const errorText = await responses[i].text();
+          console.error(`STKR_LOG: Fetch failed for ${urls[i]}: ${responses[i].status} ${responses[i].statusText}`, errorText);
+          throw new Error(`Zerodha API call failed: ${urls[i]}`);
+        }
       }
 
-      const [holdingsData, positionsData, ordersData, marginsData] = await Promise.all([
-        holdingsRes.json(),
-        positionsRes.json(),
-        ordersRes.json(),
-        marginsRes.json()
-      ]);
+      const [holdingsData, positionsData, ordersData, marginsData] = await Promise.all(responses.map(res => res.json()));
       
       if (holdingsData.status === 'success') setZerodhaHoldings(holdingsData.data);
       if (positionsData.status === 'success') setZerodhaPositions(positionsData.data.net);
@@ -928,9 +930,9 @@ const App: React.FC = () => {
         setZerodhaOrders(sortedOrders);
       }
       console.log("STKR_LOG: Zerodha data fetched successfully");
-    } catch (e) {
+    } catch (e: any) {
       console.error("STKR_LOG: Failed to fetch Zerodha data:", e);
-      toast.error("Failed to sync with Zerodha. Please try again.");
+      toast.error(`Sync failed: ${e.message || 'Unknown error'}`);
     } finally {
       setIsBrokerLoading(false);
     }

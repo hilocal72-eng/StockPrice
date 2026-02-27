@@ -8,7 +8,7 @@ import fs from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-console.log("Starting Stocker Server (Production Mode)...");
+console.log("Starting Stocker Server v1.0.1 (Production Mode)...");
 
 process.on('uncaughtException', (err) => {
   console.error('STKR_LOG: Uncaught Exception:', err);
@@ -78,7 +78,7 @@ async function startServer() {
 
   // Health Check
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.json({ status: "ok", version: "1.0.1", timestamp: new Date().toISOString() });
   });
 
   // Proxy Endpoint for Yahoo Finance
@@ -332,6 +332,7 @@ async function startServer() {
   });
 
   app.get("/api/broker/zerodha/orders", (req, res) => {
+    console.log(`STKR_LOG: Fetching Zerodha orders for ${req.query.username}`);
     res.json({
       status: 'success',
       data: mockOrders
@@ -362,6 +363,7 @@ async function startServer() {
   });
 
   app.get("/api/broker/zerodha/margins", (req, res) => {
+    console.log(`STKR_LOG: Fetching Zerodha margins for ${req.query.username}`);
     res.json({
       status: 'success',
       data: {
@@ -417,8 +419,23 @@ async function startServer() {
     });
   });
 
+  app.get("/api/broker/zerodha/auth-url", (req, res) => {
+    console.log("STKR_LOG: Generating Zerodha auth URL");
+    // Mock auth URL - in a real app, this would be the Zerodha login page
+    // For the preview, we'll just redirect back with a mock token
+    const mockUrl = `${req.protocol}://${req.get('host')}/?status=success&request_token=MOCK_TOKEN_123`;
+    res.json({ url: mockUrl });
+  });
+
+  app.post("/api/broker/disconnect", (req, res) => {
+    const { username } = req.body;
+    console.log(`STKR_LOG: Disconnecting broker for ${username}`);
+    res.json({ status: 'success', message: 'Broker disconnected' });
+  });
+
   app.get("/api/broker/status", (req, res) => {
     const { username } = req.query;
+    console.log(`STKR_LOG: Broker status check for ${username}`);
     // For mock purposes, we'll say it's always connected if the user exists
     res.json({
       connected: true,
@@ -439,6 +456,7 @@ async function startServer() {
   });
 
   app.get("/api/broker/zerodha/holdings", (req, res) => {
+    console.log(`STKR_LOG: Fetching Zerodha holdings for ${req.query.username}`);
     res.json({
       status: 'success',
       data: [
@@ -450,6 +468,7 @@ async function startServer() {
   });
 
   app.get("/api/broker/zerodha/positions", (req, res) => {
+    console.log(`STKR_LOG: Fetching Zerodha positions for ${req.query.username}`);
     res.json({
       status: 'success',
       data: {

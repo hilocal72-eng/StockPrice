@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 
 // Register Service Worker for Push Notifications
+/*
 if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
   window.addEventListener('load', () => {
     // Use absolute path to ensure registration works from any sub-path (like OAuth callbacks)
@@ -33,6 +34,7 @@ if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
       });
   });
 }
+*/
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

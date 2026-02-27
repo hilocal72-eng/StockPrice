@@ -892,7 +892,7 @@ const App: React.FC = () => {
 
   const fetchZerodhaData = useCallback(async () => {
     if (!currentUser) return;
-    console.log("STKR_LOG: fetchZerodhaData v1.0.1 called");
+    console.log("STKR_LOG: fetchZerodhaData v1.0.2 called");
     // If we're not in 'live' mode and not in 'z' view, don't fetch
     if (tradingMode !== 'live' && activeView !== 'z') {
       console.log("STKR_LOG: Skipping Zerodha fetch - not in live mode/Z view");

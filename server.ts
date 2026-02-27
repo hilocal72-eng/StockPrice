@@ -78,7 +78,82 @@ async function startServer() {
 
   // Health Check
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", version: "1.0.1", timestamp: new Date().toISOString() });
+    res.json({ status: "ok", version: "1.0.2", timestamp: new Date().toISOString() });
+  });
+
+  // --- Broker Endpoints (Zerodha) ---
+  app.get("/api/broker/status", (req, res) => {
+    const { username } = req.query;
+    console.log(`STKR_LOG: [v1.0.2] Broker status check for ${username}`);
+    res.json({
+      connected: true,
+      broker: 'zerodha',
+      version: '1.0.2',
+      last_sync: new Date().toISOString()
+    });
+  });
+
+  app.get(["/api/broker/zerodha/margins", "/api/broker/zerodha/margins/"], (req, res) => {
+    console.log(`STKR_LOG: [v1.0.2] Fetching Zerodha margins for ${req.query.username}`);
+    res.json({
+      status: 'success',
+      data: {
+        equity: {
+          enabled: true,
+          net: 45230.50,
+          available: { cash: 45230.50, adhoc_margin: 0, collateral: 0, intraday_payin: 0 },
+          utilised: { debits: 0, exposure: 0, m2m_unrealised: 0, m2m_realised: 0, option_premium: 0, payout: 0, span: 0, holding_sales: 0, turnover: 0, liquid_collateral: 0, stock_collateral: 0, var: 0 }
+        },
+        commodity: { enabled: false, net: 0, available: { cash: 0, adhoc_margin: 0, collateral: 0, intraday_payin: 0 }, utilised: { debits: 0, exposure: 0, m2m_unrealised: 0, m2m_realised: 0, option_premium: 0, payout: 0, span: 0, holding_sales: 0, turnover: 0, liquid_collateral: 0, stock_collateral: 0, var: 0 } }
+      }
+    });
+  });
+
+  app.get(["/api/broker/zerodha/holdings", "/api/broker/zerodha/holdings/"], (req, res) => {
+    console.log(`STKR_LOG: [v1.0.2] Fetching Zerodha holdings for ${req.query.username}`);
+    res.json({
+      status: 'success',
+      data: [
+        { tradingsymbol: "RELIANCE", exchange: "NSE", isin: "INE002A01018", quantity: 10, t1_quantity: 0, realised_quantity: 10, authorised_quantity: 10, average_price: 2450.50, last_price: 2910.20, pnl: 4597.00 },
+        { tradingsymbol: "TCS", exchange: "NSE", isin: "INE467B01029", quantity: 5, t1_quantity: 0, realised_quantity: 5, authorised_quantity: 5, average_price: 3200.00, last_price: 3855.40, pnl: 3277.00 }
+      ]
+    });
+  });
+
+  app.get(["/api/broker/zerodha/positions", "/api/broker/zerodha/positions/"], (req, res) => {
+    console.log(`STKR_LOG: [v1.0.2] Fetching Zerodha positions for ${req.query.username}`);
+    res.json({
+      status: 'success',
+      data: {
+        net: [
+          { tradingsymbol: "NIFTY24FEB22000CE", exchange: "NFO", instrument_token: 12345, product: "NRML", quantity: 50, over_night_quantity: 50, multiplier: 1, average_price: 120.50, last_price: 145.20, pnl: 1235.00, realised: 0, unrealised: 1235.00, buy_quantity: 50, buy_price: 120.50, buy_value: 6025, sell_quantity: 0, sell_price: 0, sell_value: 0 }
+        ],
+        day: []
+      }
+    });
+  });
+
+  app.get(["/api/broker/zerodha/orders", "/api/broker/zerodha/orders/"], (req, res) => {
+    console.log(`STKR_LOG: [v1.0.2] Fetching Zerodha orders for ${req.query.username}`);
+    res.json({ status: 'success', data: [] });
+  });
+
+  app.get("/api/broker/zerodha/auth-url", (req, res) => {
+    console.log("STKR_LOG: Generating Zerodha auth URL");
+    const mockUrl = `${req.protocol}://${req.get('host')}/?status=success&request_token=MOCK_TOKEN_123`;
+    res.json({ url: mockUrl });
+  });
+
+  app.post("/api/broker/zerodha/exchange", (req, res) => {
+    const { username, requestToken } = req.body;
+    console.log(`STKR_LOG: Zerodha token exchange for ${username}`);
+    res.json({ status: 'success', message: 'Token exchanged successfully' });
+  });
+
+  app.post("/api/broker/disconnect", (req, res) => {
+    const { username } = req.body;
+    console.log(`STKR_LOG: Disconnecting broker for ${username}`);
+    res.json({ status: 'success', message: 'Broker disconnected' });
   });
 
   // Proxy Endpoint for Yahoo Finance
@@ -329,156 +404,6 @@ async function startServer() {
         }
       });
     }, 600); // Add realistic network delay
-  });
-
-  app.get("/api/broker/zerodha/orders", (req, res) => {
-    console.log(`STKR_LOG: Fetching Zerodha orders for ${req.query.username}`);
-    res.json({
-      status: 'success',
-      data: mockOrders
-    });
-  });
-
-  app.delete("/api/broker/zerodha/order/:order_id", (req, res) => {
-    const { order_id } = req.params;
-    const orderIndex = mockOrders.findIndex(o => o.order_id === order_id);
-    
-    if (orderIndex === -1) {
-      return res.status(404).json({ status: 'error', message: 'Order not found' });
-    }
-
-    if (mockOrders[orderIndex].status !== 'OPEN' && mockOrders[orderIndex].status !== 'TRIGGER PENDING') {
-      return res.status(400).json({ status: 'error', message: 'Order cannot be cancelled' });
-    }
-
-    mockOrders[orderIndex].status = 'CANCELLED';
-    
-    res.json({
-      status: 'success',
-      data: {
-        order_id,
-        status: 'CANCELLED'
-      }
-    });
-  });
-
-  app.get("/api/broker/zerodha/margins", (req, res) => {
-    console.log(`STKR_LOG: Fetching Zerodha margins for ${req.query.username}`);
-    res.json({
-      status: 'success',
-      data: {
-        equity: {
-          enabled: true,
-          net: 45230.50,
-          available: {
-            adhoc_margin: 0,
-            cash: 45230.50,
-            collateral: 0,
-            intraday_payin: 0
-          },
-          utilised: {
-            debits: 0,
-            exposure: 0,
-            m2m_unrealised: 0,
-            m2m_realised: 0,
-            option_premium: 0,
-            payout: 0,
-            span: 0,
-            holding_sales: 0,
-            turnover: 0,
-            liquid_collateral: 0,
-            stock_collateral: 0,
-            var: 0
-          }
-        },
-        commodity: {
-          enabled: false,
-          net: 0,
-          available: {
-            adhoc_margin: 0,
-            cash: 0,
-            collateral: 0,
-            intraday_payin: 0
-          },
-          utilised: {
-            debits: 0,
-            exposure: 0,
-            m2m_unrealised: 0,
-            m2m_realised: 0,
-            option_premium: 0,
-            payout: 0,
-            span: 0,
-            holding_sales: 0,
-            turnover: 0,
-            liquid_collateral: 0,
-            stock_collateral: 0,
-            var: 0
-          }
-        }
-      }
-    });
-  });
-
-  app.get("/api/broker/zerodha/auth-url", (req, res) => {
-    console.log("STKR_LOG: Generating Zerodha auth URL");
-    // Mock auth URL - in a real app, this would be the Zerodha login page
-    // For the preview, we'll just redirect back with a mock token
-    const mockUrl = `${req.protocol}://${req.get('host')}/?status=success&request_token=MOCK_TOKEN_123`;
-    res.json({ url: mockUrl });
-  });
-
-  app.post("/api/broker/disconnect", (req, res) => {
-    const { username } = req.body;
-    console.log(`STKR_LOG: Disconnecting broker for ${username}`);
-    res.json({ status: 'success', message: 'Broker disconnected' });
-  });
-
-  app.get("/api/broker/status", (req, res) => {
-    const { username } = req.query;
-    console.log(`STKR_LOG: Broker status check for ${username}`);
-    // For mock purposes, we'll say it's always connected if the user exists
-    res.json({
-      connected: true,
-      broker: 'zerodha',
-      last_sync: new Date().toISOString()
-    });
-  });
-
-  app.post("/api/broker/zerodha/exchange", (req, res) => {
-    const { username, requestToken } = req.body;
-    console.log(`STKR_LOG: Zerodha token exchange for ${username} with token ${requestToken}`);
-    
-    // Mock successful exchange
-    res.json({
-      status: 'success',
-      message: 'Token exchanged successfully'
-    });
-  });
-
-  app.get("/api/broker/zerodha/holdings", (req, res) => {
-    console.log(`STKR_LOG: Fetching Zerodha holdings for ${req.query.username}`);
-    res.json({
-      status: 'success',
-      data: [
-        { tradingsymbol: "RELIANCE", exchange: "NSE", isin: "INE002A01018", quantity: 10, t1_quantity: 0, realised_quantity: 10, authorised_quantity: 10, average_price: 2450.50, last_price: 2910.20, pnl: 4597.00 },
-        { tradingsymbol: "TCS", exchange: "NSE", isin: "INE467B01029", quantity: 5, t1_quantity: 0, realised_quantity: 5, authorised_quantity: 5, average_price: 3200.00, last_price: 3855.40, pnl: 3277.00 },
-        { tradingsymbol: "HDFCBANK", exchange: "NSE", isin: "INE040A01034", quantity: 20, t1_quantity: 0, realised_quantity: 20, authorised_quantity: 20, average_price: 1550.00, last_price: 1420.15, pnl: -2597.00 }
-      ]
-    });
-  });
-
-  app.get("/api/broker/zerodha/positions", (req, res) => {
-    console.log(`STKR_LOG: Fetching Zerodha positions for ${req.query.username}`);
-    res.json({
-      status: 'success',
-      data: {
-        net: [
-          { tradingsymbol: "NIFTY24FEB22000CE", exchange: "NFO", instrument_token: 12345, product: "NRML", quantity: 50, over_night_quantity: 50, multiplier: 1, average_price: 120.50, last_price: 145.20, pnl: 1235.00, realised: 0, unrealised: 1235.00, buy_quantity: 50, buy_price: 120.50, buy_value: 6025, sell_quantity: 0, sell_price: 0, sell_value: 0 },
-          { tradingsymbol: "BANKNIFTY24FEB46000PE", exchange: "NFO", instrument_token: 67890, product: "MIS", quantity: 0, over_night_quantity: 0, multiplier: 1, average_price: 0, last_price: 210.40, pnl: 850.00, realised: 850.00, unrealised: 0, buy_quantity: 15, buy_price: 250.00, buy_value: 3750, sell_quantity: 15, sell_price: 306.66, sell_value: 4600 }
-        ],
-        day: []
-      }
-    });
   });
 
   // Catch-all for undefined API routes

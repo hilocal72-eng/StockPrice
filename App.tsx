@@ -13,7 +13,7 @@ import SplashScreen from './components/SplashScreen.tsx';
 import AdminPanelModal from './components/AdminPanelModal.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
 
-type View = 'dashboard' | 'favorites' | 'alerts' | 'trade';
+type View = 'dashboard' | 'favorites' | 'trade' | 'z';
 type Timeframe = '15m' | '1D';
 type DrawingTool = 'horizontal' | 'trend' | null;
 type SentimentFilter = 'all' | 'bullish' | 'bearish';
@@ -534,6 +534,7 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
   const [product, setProduct] = useState('CNC');
   const [price, setPrice] = useState('');
   const [currentMarketPrice, setCurrentMarketPrice] = useState<number | null>(null);
+  const [availableFunds, setAvailableFunds] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -541,9 +542,24 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
   const debounceTimeout = useRef<number | null>(null);
 
   useEffect(() => {
+    const fetchMargins = async () => {
+      try {
+        const res = await fetch('/api/broker/zerodha/margins');
+        const data = await res.json();
+        if (data.status === 'success') {
+          setAvailableFunds(data.data.equity.available.cash);
+        }
+      } catch (e) {
+        console.error('Failed to fetch margins:', e);
+      }
+    };
+    fetchMargins();
+  }, []);
+
+  useEffect(() => {
     if (ticker.trim() && isSearchFocused) {
       debounceTimeout.current = window.setTimeout(async () => {
-        const results = await searchStocks(ticker, true);
+        const results = await searchStocks(ticker);
         setSearchResults(results);
       }, 300);
     } else {
@@ -632,7 +648,15 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
               </div>
               <div>
                 <h2 className="text-lg font-bold text-teal-50 tracking-tight">Live Order</h2>
-                <p className="text-[10px] font-medium text-teal-200/60 uppercase tracking-widest">Zerodha Integration</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-medium text-teal-200/60 uppercase tracking-widest">Zerodha Integration</p>
+                  {availableFunds !== null && (
+                    <>
+                      <span className="w-1 h-1 rounded-full bg-teal-500/40" />
+                      <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Margin: ₹{availableFunds.toLocaleString('en-IN')}</p>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-teal-800/50 text-teal-200/50 hover:text-teal-100 transition-colors border border-transparent hover:border-teal-500/30"><X size={18} /></button>
@@ -1043,34 +1067,15 @@ const App: React.FC = () => {
   }, [fetchBrokerStatus]);
 
   useEffect(() => {
-    if (tradingMode === 'live') {
-      fetchZerodhaData();
-      const interval = setInterval(() => {
-        // Check if current time is between 9 AM and 4 PM IST (Indian Standard Time)
-        // IST is UTC+5:30
-        const now = new Date();
-        const utcHours = now.getUTCHours();
-        const utcMinutes = now.getUTCMinutes();
-        
-        // Convert UTC to IST
-        let istHours = utcHours + 5;
-        let istMinutes = utcMinutes + 30;
-        if (istMinutes >= 60) {
-          istHours += 1;
-          istMinutes -= 60;
-        }
-        if (istHours >= 24) {
-          istHours -= 24;
-        }
-
-        // 9 AM to 4 PM (16:00) IST
-        if (istHours >= 9 && istHours < 16) {
-          fetchZerodhaData();
-        }
-      }, 60000); // 1 minute
-      return () => clearInterval(interval);
+    if (activeView === 'trade') {
+      setTradingMode('paper');
+      localStorage.setItem('stkr_trading_mode', 'paper');
+    } else if (activeView === 'z') {
+      setTradingMode('live');
+      localStorage.setItem('stkr_trading_mode', 'live');
     }
-  }, [tradingMode, fetchZerodhaData]);
+  }, [activeView]);
+
   const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
@@ -1230,7 +1235,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const hasActive = userAlerts.some(a => a.status === 'active');
-    if (!hasActive && activeView !== 'alerts') return;
+    if (!hasActive && activeView !== 'trade') return;
     const interval = setInterval(refreshAlerts, 20000);
     return () => clearInterval(interval);
   }, [userAlerts, activeView, refreshAlerts]);
@@ -1439,9 +1444,9 @@ const App: React.FC = () => {
         </div>
         <nav className="flex-1 px-2 space-y-4 mt-6">
           <button onClick={() => setActiveView('dashboard')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'dashboard' ? 'bg-white/15 text-white border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><LayoutDashboard size={20} /></button>
-          <button onClick={() => setActiveView('trade')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'trade' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Briefcase size={20} /></button>
-          <button onClick={() => setActiveView('favorites')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'favorites' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><Heart size={20} /></button>
-          <button onClick={() => setActiveView('alerts')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'alerts' ? 'bg-white/15 text-yellow-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`}><BellRing size={20} /></button>
+          <button onClick={() => setActiveView('trade')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'trade' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`} title="Paper Trading"><Briefcase size={20} /></button>
+          <button onClick={() => setActiveView('favorites')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'favorites' ? 'bg-white/15 text-pink-500 border border-white/50 shadow-md' : 'text-white/40 hover:text-white/80'}`} title="Watchlist"><Heart size={20} /></button>
+          <button onClick={() => setActiveView('z')} className={`w-full flex items-center justify-center p-3.5 rounded-2xl transition-all ${activeView === 'z' ? 'bg-[#ccff00]/10 text-[#ccff00] border border-[#ccff00]/30 shadow-md' : 'text-white/40 hover:text-white/80'}`} title="Zerodha"><Zap size={20} /></button>
           {currentUser === 'admin' && (
             <button onClick={() => setIsAdminModalOpen(true)} className="w-full flex items-center justify-center p-3.5 rounded-2xl transition-all text-pink-500 hover:bg-pink-500/10 border border-transparent hover:border-pink-500/20 shadow-md"><Shield size={20} strokeWidth={2.5} /></button>
           )}
@@ -1547,56 +1552,25 @@ const App: React.FC = () => {
             </div>
           ) : activeView === 'trade' ? (
             <div className="space-y-4 animate-in fade-in duration-500">
-               <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-full max-w-xs mx-auto mb-2">
-                 <button 
-                   onClick={() => { if (tradingMode !== 'paper') toggleTradingMode(); }}
-                   className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tradingMode === 'paper' ? 'bg-emerald-500 text-black shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                 >
-                   <Shield size={12} strokeWidth={3} />
-                   Paper
-                 </button>
-                 <button 
-                   onClick={() => { if (tradingMode !== 'live') toggleTradingMode(); }}
-                   className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tradingMode === 'live' ? 'bg-[#ccff00] text-black shadow-[0_0_15px_rgba(204,255,0,0.3)]' : 'text-white/40 hover:text-white/60'}`}
-                 >
-                   <Zap size={12} strokeWidth={3} />
-                   Live
-                 </button>
-               </div>
-
                <div className="flex justify-between items-center gap-2">
                   <div className="flex items-center gap-2">
-                    <div className={`p-2 rounded-lg border shadow-lg transition-all ${tradingMode === 'live' ? 'bg-[#ccff00]/20 text-[#ccff00] border-[#ccff00]/30' : 'bg-pink-600/20 text-pink-500 border-pink-500/30'}`}>
+                    <div className="p-2 rounded-lg border shadow-lg transition-all bg-pink-600/20 text-pink-500 border-pink-500/30">
                       <Briefcase size={16} strokeWidth={3} />
                     </div>
                     <div className="flex flex-col">
-                      <h2 className={`text-[11px] font-black uppercase tracking-widest leading-none ${tradingMode === 'live' ? 'text-[#ccff00]' : 'text-white'}`}>
-                        {tradingMode === 'live' ? 'LIVE PORTFOLIO' : 'PAPER PORTFOLIO'}
+                      <h2 className="text-[11px] font-black uppercase tracking-widest leading-none text-white">
+                        PAPER PORTFOLIO
                       </h2>
                       <span className="text-[7px] font-bold text-white/50 uppercase tracking-[0.2em] mt-0.5">
-                        {tradingMode === 'live' ? 'Zerodha Kite Integration' : 'Real-time valuation'}
+                        Real-time valuation
                       </span>
                     </div>
                   </div>
-                  {tradingMode === 'paper' ? (
-                    <button onClick={() => setIsAddTradeModalOpen(true)} className="px-3 sm:px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95 shrink-0">
-                      <Plus size={12} className="w-3 h-3 sm:w-4 sm:h-4" strokeWidth={3} />
-                      <span className="hidden xs:inline">ADD POSITION</span>
-                      <span className="xs:hidden">ADD</span>
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                      <button onClick={() => setIsZerodhaTradeModalOpen(true)} className="px-2.5 sm:px-4 py-2 bg-[#ccff00] hover:bg-[#b3e600] text-black rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-[0_0_10px_rgba(204,255,0,0.3)] border border-[#ccff00]/50 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95">
-                        <Zap size={10} className="w-2.5 h-2.5 sm:w-3 sm:h-3" strokeWidth={3} />
-                        TRADE
-                      </button>
-                      <button onClick={fetchZerodhaData} disabled={isBrokerLoading} className="px-2.5 sm:px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95 disabled:opacity-50">
-                        <RefreshCw size={10} className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isBrokerLoading ? 'animate-spin' : ''}`} />
-                        <span className="hidden xs:inline">SYNC KITE</span>
-                        <span className="xs:hidden">SYNC</span>
-                      </button>
-                    </div>
-                  )}
+                  <button onClick={() => setIsAddTradeModalOpen(true)} className="px-3 sm:px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-lg border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95 shrink-0">
+                    <Plus size={12} className="w-3 h-3 sm:w-4 sm:h-4" strokeWidth={3} />
+                    <span className="hidden xs:inline">ADD POSITION</span>
+                    <span className="xs:hidden">ADD</span>
+                  </button>
                </div>
 
                <div className="grid grid-cols-2 gap-3">
@@ -1622,9 +1596,9 @@ const App: React.FC = () => {
                <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40">
                   <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
                     <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">
-                      {tradingMode === 'live' ? 'ZERODHA HOLDINGS' : 'HOLDINGS'}
+                      HOLDINGS
                     </h3>
-                    {(isPortfolioLoading || isBrokerLoading) && <Loader2 size={10} className="animate-spin text-pink-500" />}
+                    {isPortfolioLoading && <Loader2 size={10} className="animate-spin text-pink-500" />}
                   </div>
                   <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left border-collapse min-w-[420px]">
@@ -1639,65 +1613,34 @@ const App: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/10">
-                        {tradingMode === 'paper' ? (
-                          portfolio.map(item => {
-                            const pl = item.currentPrice ? (item.currentPrice - item.avgPrice) * item.quantity : 0;
-                            const plPerc = (pl / (item.avgPrice * item.quantity)) * 100;
-                            return (
-                              <tr key={item.id} className="hover:bg-white/[0.04] transition-colors group">
-                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.symbol)}>
-                                  <div className="flex flex-col">
-                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.symbol}</span>
-                                  </div>
-                                </td>
-                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
-                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.avgPrice.toFixed(2)}</td>
-                                <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.currentPrice?.toFixed(2) || '---'}</td>
-                                <td className="px-2 py-3 text-right border-r border-white/10">
-                                  <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
-                                    <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  <button onClick={() => handleRemovePortfolioItem(item.id)} className="p-1.5 rounded-md text-white/30 hover:text-rose-500 hover:bg-rose-500/10 transition-all border border-transparent hover:border-rose-500/20">
-                                    <Trash2 size={12} strokeWidth={2.5} />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          zerodhaHoldings.map((item, i) => {
-                            const pl = item.pnl;
-                            const plPerc = (pl / (item.average_price * item.quantity)) * 100;
-                            return (
-                              <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
-                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.tradingsymbol)}>
-                                  <div className="flex flex-col">
-                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.tradingsymbol}</span>
-                                    <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{item.exchange}</span>
-                                  </div>
-                                </td>
-                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
-                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.average_price.toFixed(2)}</td>
-                                <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.last_price.toFixed(2)}</td>
-                                <td className="px-2 py-3 text-right border-r border-white/10">
-                                  <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
-                                    <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  <button onClick={() => handleSelectAndSearch(item.tradingsymbol)} className="p-1.5 rounded-md text-white/30 hover:text-pink-500 hover:bg-pink-500/10 transition-all border border-transparent hover:border-pink-500/20">
-                                    <ArrowUpRight size={12} strokeWidth={2.5} />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                        {(tradingMode === 'paper' ? portfolio.length : zerodhaHoldings.length) === 0 && (
+                        {portfolio.map(item => {
+                          const pl = item.currentPrice ? (item.currentPrice - item.avgPrice) * item.quantity : 0;
+                          const plPerc = (pl / (item.avgPrice * item.quantity)) * 100;
+                          return (
+                            <tr key={item.id} className="hover:bg-white/[0.04] transition-colors group">
+                              <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.symbol)}>
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.symbol}</span>
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
+                              <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.avgPrice.toFixed(2)}</td>
+                              <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.currentPrice?.toFixed(2) || '---'}</td>
+                              <td className="px-2 py-3 text-right border-r border-white/10">
+                                <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
+                                  <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <button onClick={() => handleRemovePortfolioItem(item.id)} className="p-1.5 rounded-md text-white/30 hover:text-rose-500 hover:bg-rose-500/10 transition-all border border-transparent hover:border-rose-500/20">
+                                  <Trash2 size={12} strokeWidth={2.5} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {portfolio.length === 0 && (
                           <tr>
                             <td colSpan={6} className="py-16 text-center">
                               <div className="flex flex-col items-center gap-2">
@@ -1712,141 +1655,321 @@ const App: React.FC = () => {
                   </div>
                </div>
 
-               {tradingMode === 'live' && zerodhaPositions.length > 0 && (
-                 <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40">
-                    <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
-                      <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">ZERODHA POSITIONS</h3>
+               {/* Alerts Section moved to Paper tab */}
+               <div className="space-y-4 pt-4">
+                  <div className="relative p-[1px] rounded-xl overflow-hidden w-full">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                      className="absolute inset-[-150%] bg-[conic-gradient(from_0deg,transparent_0deg,rgba(234,179,8,0.1)_90deg,rgba(234,179,8,0.6)_180deg,rgba(234,179,8,0.1)_270deg,transparent_360deg)] opacity-40"
+                    />
+                    <div className="relative flex items-center gap-3 px-3 py-2 bg-black/80 backdrop-blur-xl rounded-[calc(0.75rem-1px)] border border-white/5">
+                      <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 shadow-sm">
+                         <BellRing size={12} strokeWidth={3} />
+                      </div>
+                      <div className="flex flex-col">
+                         <h2 className="text-[9px] font-black text-white uppercase tracking-[0.2em] leading-tight">Price Alerts</h2>
+                         <span className="text-[6px] font-bold text-white/50 uppercase tracking-widest mt-0.5">Active Thresholds</span>
+                      </div>
                     </div>
-                    <div className="overflow-x-auto custom-scrollbar">
-                      <table className="w-full text-left border-collapse min-w-[420px]">
-                        <thead>
-                          <tr className="bg-white/[0.02] border-b border-white/20">
-                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
-                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Quantity</th>
-                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Avg Cost</th>
-                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Mkt Price</th>
-                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">P/L</th>
-                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Product</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/10">
-                          {zerodhaPositions.map((item, i) => {
-                            const pl = item.pnl;
-                            return (
-                              <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
-                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.tradingsymbol)}>
-                                  <div className="flex flex-col">
-                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.tradingsymbol}</span>
-                                    <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{item.exchange}</span>
-                                  </div>
-                                </td>
-                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
-                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.average_price.toFixed(2)}</td>
-                                <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.last_price.toFixed(2)}</td>
-                                <td className="px-2 py-3 text-right border-r border-white/10">
-                                  <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  <span className="text-[8px] font-black text-white/40 uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 border border-white/10">{item.product}</span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {Array.isArray(userAlerts) && userAlerts.map(alert => (
+                      <motion.div 
+                        key={alert.id || `alert-${alert.ticker}-${alert.target_price}`} 
+                        className={`relative overflow-hidden p-[1px] rounded-xl transition-all bg-gradient-to-br ${alert.status === 'triggered' ? 'from-yellow-400/60 via-yellow-600/20 to-transparent' : 'from-white/20 via-white/5 to-transparent'}`}
+                      >
+                        <div className={`relative h-full w-full rounded-[0.65rem] p-3 bg-black/80 backdrop-blur-xl flex flex-col gap-2`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center border ${alert.status === 'triggered' ? 'bg-yellow-500/10 border-yellow-400/30 text-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.3)]' : 'bg-white/5 border-white/10 text-white/30'}`}>
+                                {alert.status === 'triggered' ? <Zap size={12} fill="currentColor" /> : <Clock size={12} />}
+                              </div>
+                              <div className="flex flex-col">
+                                <h3 className="text-[10px] font-black text-white tracking-tight uppercase">{alert.ticker}</h3>
+                                <span className={`text-[6px] font-black uppercase tracking-widest ${alert.status === 'triggered' ? 'text-yellow-400' : 'text-emerald-400/80'}`}>{alert.status === 'triggered' ? 'Target Met' : 'Active'}</span>
+                              </div>
+                            </div>
+                            <button onClick={() => alert.id && handleDeleteAlert(alert.id)} className="p-1 text-white/30 hover:text-rose-500 hover:bg-rose-500/5 transition-all"><Trash2 size={12} /></button>
+                          </div>
+                          <div className="bg-white/[0.02] border border-white/10 rounded-lg p-2 flex items-center justify-between">
+                            <span className="text-[7px] font-black text-white/80 uppercase tracking-widest">{alert.condition === 'above' ? 'Above' : 'Below'}</span>
+                            <span className="text-[14px] font-black text-white tabular-nums tracking-tighter">{alert.target_price.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+               </div>
+            </div>
+          ) : activeView === 'z' ? (
+            <div className="space-y-4 animate-in fade-in duration-500">
+               {!brokerStatus.connected ? (
+                 <div className="py-24 flex flex-col items-center gap-6 text-center">
+                   <div className="p-6 rounded-full bg-white/5 border border-white/10 shadow-2xl">
+                     <ZapOff size={48} className="text-white/20" />
+                   </div>
+                   <div className="space-y-2">
+                     <h2 className="text-xl font-black text-white uppercase tracking-widest">Zerodha Not Connected</h2>
+                     <p className="text-[10px] text-white/50 uppercase tracking-widest max-w-xs mx-auto">Please connect your Zerodha account to access live trading terminal.</p>
+                   </div>
+                   <button 
+                     onClick={() => setIsBrokerModalOpen(true)}
+                     className="px-8 py-3 bg-[#ccff00] text-black font-black uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(204,255,0,0.3)] hover:scale-105 transition-all active:scale-95"
+                   >
+                     Connect Kite
+                   </button>
                  </div>
-               )}
+               ) : (
+                 <>
+                   <div className="flex justify-between items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg border shadow-lg transition-all bg-[#ccff00]/20 text-[#ccff00] border-[#ccff00]/30">
+                          <Zap size={16} strokeWidth={3} />
+                        </div>
+                        <div className="flex flex-col">
+                          <h2 className="text-[11px] font-black uppercase tracking-widest leading-none text-[#ccff00]">
+                            ZERODHA TERMINAL
+                          </h2>
+                          <span className="text-[7px] font-bold text-white/50 uppercase tracking-[0.2em] mt-0.5">
+                            Live Kite Integration
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                        <button onClick={() => setIsZerodhaTradeModalOpen(true)} className="px-2.5 sm:px-4 py-2 bg-[#ccff00] hover:bg-[#b3e600] text-black rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] shadow-[0_0_10px_rgba(204,255,0,0.3)] border border-[#ccff00]/50 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95">
+                          <Plus size={10} className="w-2.5 h-2.5 sm:w-3 sm:h-3" strokeWidth={3} />
+                          TRADE
+                        </button>
+                        <button onClick={fetchZerodhaData} disabled={isBrokerLoading} className="px-2.5 sm:px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[7px] sm:text-[8px] font-black uppercase tracking-[0.15em] border border-white/20 transition-all flex items-center gap-1 sm:gap-1.5 active:scale-95 disabled:opacity-50">
+                          <RefreshCw size={10} className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isBrokerLoading ? 'animate-spin' : ''}`} />
+                          <span className="hidden xs:inline">SYNC KITE</span>
+                          <span className="xs:hidden">SYNC</span>
+                        </button>
+                      </div>
+                   </div>
 
-               {tradingMode === 'live' && zerodhaOrders.length > 0 && (
-                 <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40 mt-3.5">
-                    <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
-                      <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">ZERODHA ORDERS</h3>
-                    </div>
-                    <div className="overflow-x-auto custom-scrollbar">
-                      <table className="w-full text-left border-collapse min-w-[500px]">
-                        <thead>
-                          <tr className="bg-white/[0.02] border-b border-white/20">
-                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">Time</th>
-                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
-                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Type</th>
-                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Qty</th>
-                            <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Price</th>
-                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center border-r border-white/10">Status</th>
-                            <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/10">
-                          {zerodhaOrders.map((order, i) => {
-                            const isBuy = order.transaction_type === 'BUY';
-                            let statusColor = 'text-white/50 border-white/10 bg-white/5';
-                            if (order.status === 'COMPLETE') statusColor = 'text-emerald-400 border-emerald-400/20 bg-emerald-500/10';
-                            if (order.status === 'REJECTED' || order.status === 'CANCELLED') statusColor = 'text-rose-400 border-rose-400/20 bg-rose-500/10';
-                            if (order.status === 'OPEN' || order.status === 'TRIGGER PENDING') statusColor = 'text-amber-400 border-amber-400/20 bg-amber-500/10';
+                   <div className="grid grid-cols-2 gap-3">
+                      <div className="glossy-card !border-white/30 p-3.5 rounded-xl flex flex-col gap-0.5 shadow-lg relative overflow-hidden group border-white/10">
+                        <span className="text-[7px] font-black text-white/60 uppercase tracking-widest">Invested Value</span>
+                        <div className="text-[16px] font-black text-white tabular-nums tracking-tighter">
+                          {portfolioStats.totalInvested.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      <div className={`glossy-card !border-white/30 p-3.5 rounded-xl flex flex-col gap-0.5 shadow-lg relative overflow-hidden group ${portfolioStats.totalPL >= 0 ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-[7px] font-black text-white/60 uppercase tracking-widest">Total P/L</span>
+                          <span className={`text-[7px] font-black px-1 rounded-sm border ${portfolioStats.totalPL >= 0 ? 'text-emerald-400 border-emerald-400/40' : 'text-rose-400 border-rose-400/40'}`}>
+                            {portfolioStats.totalPL >= 0 ? '+' : ''}{portfolioStats.totalPLPercent.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className={`text-[16px] font-black tabular-nums tracking-tighter ${portfolioStats.totalPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {portfolioStats.totalPL >= 0 ? '+' : '-'}{Math.abs(portfolioStats.totalPL).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                   </div>
 
-                            const canCancel = order.status === 'OPEN' || order.status === 'TRIGGER PENDING';
-
-                            return (
-                              <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
-                                <td className="px-3 py-3 border-r border-white/10 text-[9px] text-white/60 whitespace-nowrap">
-                                  {new Date(order.order_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                </td>
-                                <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(order.tradingsymbol)}>
-                                  <div className="flex flex-col">
-                                    <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{order.tradingsymbol}</span>
-                                    <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{order.exchange}</span>
-                                  </div>
-                                </td>
-                                <td className="px-2 py-3 text-right border-r border-white/10">
-                                  <span className={`text-[9px] font-black uppercase tracking-wider ${isBuy ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    {order.transaction_type}
-                                  </span>
-                                </td>
-                                <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">
-                                  {order.filled_quantity}/{order.quantity}
-                                </td>
-                                <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">
-                                  {order.average_price > 0 ? order.average_price.toFixed(2) : order.price.toFixed(2)}
-                                </td>
-                                <td className="px-3 py-3 text-center border-r border-white/10">
-                                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${statusColor}`}>
-                                    {order.status}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  {canCancel ? (
-                                    <button 
-                                      onClick={async () => {
-                                        try {
-                                          const res = await fetch(`/api/broker/zerodha/order/${order.order_id}`, { method: 'DELETE' });
-                                          const data = await res.json();
-                                          if (data.status === 'success') {
-                                            toast.success('Order cancelled');
-                                            fetchZerodhaData();
-                                          } else {
-                                            toast.error(data.message || 'Failed to cancel');
-                                          }
-                                        } catch (e) {
-                                          toast.error('Error cancelling order');
-                                        }
-                                      }}
-                                      className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-colors"
-                                    >
-                                      Cancel
+                   <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40">
+                      <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
+                        <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">
+                          ZERODHA HOLDINGS
+                        </h3>
+                        {isBrokerLoading && <Loader2 size={10} className="animate-spin text-pink-500" />}
+                      </div>
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-left border-collapse min-w-[420px]">
+                          <thead>
+                            <tr className="bg-white/[0.02] border-b border-white/20">
+                              <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
+                              <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Quantity</th>
+                              <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Avg Cost</th>
+                              <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Mkt Price</th>
+                              <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">P/L</th>
+                              <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Manage</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/10">
+                            {zerodhaHoldings.map((item, i) => {
+                              const pl = item.pnl;
+                              const plPerc = (pl / (item.average_price * item.quantity)) * 100;
+                              return (
+                                <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
+                                  <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.tradingsymbol)}>
+                                    <div className="flex flex-col">
+                                      <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.tradingsymbol}</span>
+                                      <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{item.exchange}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
+                                  <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.average_price.toFixed(2)}</td>
+                                  <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.last_price.toFixed(2)}</td>
+                                  <td className="px-2 py-3 text-right border-r border-white/10">
+                                    <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                      <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
+                                      <span className="text-[6px] font-bold opacity-70 uppercase tracking-tighter">{plPerc.toFixed(1)}%</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <button onClick={() => handleSelectAndSearch(item.tradingsymbol)} className="p-1.5 rounded-md text-white/30 hover:text-pink-500 hover:bg-pink-500/10 transition-all border border-transparent hover:border-pink-500/20">
+                                      <ArrowUpRight size={12} strokeWidth={2.5} />
                                     </button>
-                                  ) : (
-                                    <span className="text-[8px] text-white/20 uppercase tracking-widest">-</span>
-                                  )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {zerodhaHoldings.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="py-16 text-center">
+                                  <div className="flex flex-col items-center gap-2">
+                                    <Activity size={24} className="text-white/20" />
+                                    <span className="text-[8px] font-black text-white/50 uppercase tracking-widest">No active positions tracked</span>
+                                  </div>
                                 </td>
                               </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                 </div>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                   </div>
+
+                   {zerodhaPositions.length > 0 && (
+                     <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40">
+                        <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
+                          <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">ZERODHA POSITIONS</h3>
+                        </div>
+                        <div className="overflow-x-auto custom-scrollbar">
+                          <table className="w-full text-left border-collapse min-w-[420px]">
+                            <thead>
+                              <tr className="bg-white/[0.02] border-b border-white/20">
+                                <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
+                                <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Quantity</th>
+                                <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Avg Cost</th>
+                                <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Mkt Price</th>
+                                <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">P/L</th>
+                                <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Product</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/10">
+                              {zerodhaPositions.map((item, i) => {
+                                const pl = item.pnl;
+                                return (
+                                  <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
+                                    <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(item.tradingsymbol)}>
+                                      <div className="flex flex-col">
+                                        <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{item.tradingsymbol}</span>
+                                        <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{item.exchange}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">{item.quantity}</td>
+                                    <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">{item.average_price.toFixed(2)}</td>
+                                    <td className="px-2 py-3 text-right font-black text-white tabular-nums text-[10px] border-r border-white/10">{item.last_price.toFixed(2)}</td>
+                                    <td className="px-2 py-3 text-right border-r border-white/10">
+                                      <div className={`flex flex-col items-end ${pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        <span className="text-[10px] font-black tabular-nums">{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-3 text-center">
+                                      <span className="text-[8px] font-black text-white/40 uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 border border-white/10">{item.product}</span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                     </div>
+                   )}
+
+                   {zerodhaOrders.length > 0 && (
+                     <div className="glossy-card !border-white/30 rounded-xl overflow-hidden shadow-xl bg-black/40 mt-3.5">
+                        <div className="px-3 py-2 border-b border-white/10 bg-white/[0.04] flex items-center justify-between">
+                          <h3 className="text-[8px] font-black text-white/70 uppercase tracking-widest">ZERODHA ORDERS</h3>
+                        </div>
+                        <div className="overflow-x-auto custom-scrollbar">
+                          <table className="w-full text-left border-collapse min-w-[500px]">
+                            <thead>
+                              <tr className="bg-white/[0.02] border-b border-white/20">
+                                <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">Time</th>
+                                <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest border-r border-white/10">STOCK</th>
+                                <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Type</th>
+                                <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Qty</th>
+                                <th className="px-2 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-right border-r border-white/10">Price</th>
+                                <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center border-r border-white/10">Status</th>
+                                <th className="px-3 py-2.5 text-[7px] font-black text-white/60 uppercase tracking-widest text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/10">
+                              {zerodhaOrders.map((order, i) => {
+                                const isBuy = order.transaction_type === 'BUY';
+                                let statusColor = 'text-white/50 border-white/10 bg-white/5';
+                                if (order.status === 'COMPLETE') statusColor = 'text-emerald-400 border-emerald-400/20 bg-emerald-500/10';
+                                if (order.status === 'REJECTED' || order.status === 'CANCELLED') statusColor = 'text-rose-400 border-rose-400/20 bg-rose-500/10';
+                                if (order.status === 'OPEN' || order.status === 'TRIGGER PENDING') statusColor = 'text-amber-400 border-amber-400/20 bg-amber-500/10';
+
+                                const canCancel = order.status === 'OPEN' || order.status === 'TRIGGER PENDING';
+
+                                return (
+                                  <tr key={i} className="hover:bg-white/[0.04] transition-colors group">
+                                    <td className="px-3 py-3 border-r border-white/10 text-[9px] text-white/60 whitespace-nowrap">
+                                      {new Date(order.order_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </td>
+                                    <td className="px-3 py-3 border-r border-white/10" onClick={() => handleSelectAndSearch(order.tradingsymbol)}>
+                                      <div className="flex flex-col">
+                                        <span className="text-[11px] font-black text-white uppercase group-hover:text-pink-500 transition-colors tracking-tight">{order.tradingsymbol}</span>
+                                        <span className="text-[6px] font-bold text-white/30 uppercase tracking-widest">{order.exchange}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-2 py-3 text-right border-r border-white/10">
+                                      <span className={`text-[9px] font-black uppercase tracking-wider ${isBuy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {order.transaction_type}
+                                      </span>
+                                    </td>
+                                    <td className="px-2 py-3 text-right font-bold text-white/90 tabular-nums text-[10px] border-r border-white/10">
+                                      {order.filled_quantity}/{order.quantity}
+                                    </td>
+                                    <td className="px-2 py-3 text-right font-medium text-white/50 tabular-nums text-[10px] border-r border-white/10">
+                                      {order.average_price > 0 ? order.average_price.toFixed(2) : order.price.toFixed(2)}
+                                    </td>
+                                    <td className="px-3 py-3 text-center border-r border-white/10">
+                                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${statusColor}`}>
+                                        {order.status}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-3 text-center">
+                                      {canCancel ? (
+                                        <button 
+                                          onClick={async () => {
+                                            try {
+                                              const res = await fetch(`/api/broker/zerodha/order/${order.order_id}`, { method: 'DELETE' });
+                                              const data = await res.json();
+                                              if (data.status === 'success') {
+                                                toast.success('Order cancelled');
+                                                fetchZerodhaData();
+                                              } else {
+                                                toast.error(data.message || 'Failed to cancel');
+                                              }
+                                            } catch (e) {
+                                              toast.error('Error cancelling order');
+                                            }
+                                          }}
+                                          className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-colors"
+                                        >
+                                          Cancel
+                                        </button>
+                                      ) : (
+                                        <span className="text-[8px] text-white/20 uppercase tracking-widest">-</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                     </div>
+                   )}
+                 </>
                )}
             </div>
           ) : activeView === 'favorites' ? (
@@ -1951,9 +2074,9 @@ const App: React.FC = () => {
       </main>
       <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[58px] glossy-card !bg-black/70 !rounded-2xl border !border-white/30 flex items-center justify-around shadow-2xl px-2">
         <button onClick={() => setActiveView('dashboard')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'dashboard' ? 'text-pink-500' : 'text-white/40'}`}><LayoutDashboard size={18} strokeWidth={activeView === 'dashboard' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Desk</span></button>
-        <button onClick={() => setActiveView('trade')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'trade' ? 'text-pink-500' : 'text-white/40'}`}><Briefcase size={18} strokeWidth={activeView === 'trade' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Trade</span></button>
+        <button onClick={() => setActiveView('trade')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'trade' ? 'text-pink-500' : 'text-white/40'}`}><Briefcase size={18} strokeWidth={activeView === 'trade' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Paper</span></button>
         <button onClick={() => setActiveView('favorites')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'favorites' ? 'text-pink-500' : 'text-white/40'}`}><Heart size={18} strokeWidth={activeView === 'favorites' ? 3 : 2} fill={activeView === 'favorites' ? 'currentColor' : 'none'} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Watch</span></button>
-        <button onClick={() => setActiveView('alerts')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'alerts' ? 'text-yellow-500' : 'text-white/40'}`}><BellRing size={18} strokeWidth={activeView === 'alerts' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Alerts</span></button>
+        <button onClick={() => setActiveView('z')} className={`flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all ${activeView === 'z' ? 'text-[#ccff00]' : 'text-white/40'}`}><Zap size={18} strokeWidth={activeView === 'z' ? 3 : 2} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Z</span></button>
         {currentUser === 'admin' && (
           <button onClick={() => setIsAdminModalOpen(true)} className="flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all text-pink-500"><Shield size={18} strokeWidth={3} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Admin</span></button>
         )}

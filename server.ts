@@ -361,6 +361,62 @@ async function startServer() {
     });
   });
 
+  app.get("/api/broker/zerodha/margins", (req, res) => {
+    res.json({
+      status: 'success',
+      data: {
+        equity: {
+          enabled: true,
+          net: 45230.50,
+          available: {
+            adhoc_margin: 0,
+            cash: 45230.50,
+            collateral: 0,
+            intraday_payin: 0
+          },
+          utilised: {
+            debits: 0,
+            exposure: 0,
+            m2m_unrealised: 0,
+            m2m_realised: 0,
+            option_premium: 0,
+            payout: 0,
+            span: 0,
+            holding_sales: 0,
+            turnover: 0,
+            liquid_collateral: 0,
+            stock_collateral: 0,
+            var: 0
+          }
+        },
+        commodity: {
+          enabled: false,
+          net: 0,
+          available: {
+            adhoc_margin: 0,
+            cash: 0,
+            collateral: 0,
+            intraday_payin: 0
+          },
+          utilised: {
+            debits: 0,
+            exposure: 0,
+            m2m_unrealised: 0,
+            m2m_realised: 0,
+            option_premium: 0,
+            payout: 0,
+            span: 0,
+            holding_sales: 0,
+            turnover: 0,
+            liquid_collateral: 0,
+            stock_collateral: 0,
+            var: 0
+          }
+        }
+      }
+    });
+  });
+
   // Catch-all for undefined API routes
   app.use("/api", (req, res) => {
     console.log(`STKR_LOG: Unhandled API route: ${req.method} ${req.originalUrl}`);

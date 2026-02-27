@@ -49,7 +49,7 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
           };
         })
         // Prioritize Indian exchanges (NSE/BSE) for Zerodha integration
-        .sort((a, b) => {
+        .sort((a: SearchResult, b: SearchResult) => {
           const aIsIndian = a.exchange === 'NSE' || a.exchange === 'BSE';
           const bIsIndian = b.exchange === 'NSE' || b.exchange === 'BSE';
           if (aIsIndian && !bIsIndian) return -1;
@@ -76,10 +76,25 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
       { symbol: 'NIFTY2420822000PE', name: 'NIFTY 24 08 FEB 22000 PE', exchange: 'NFO' },
       { symbol: 'NIFTY2421522100CE', name: 'NIFTY 24 15 FEB 22100 CE', exchange: 'NFO' },
       { symbol: 'NIFTY2421522100PE', name: 'NIFTY 24 15 FEB 22100 PE', exchange: 'NFO' },
+      { symbol: 'NIFTY2422222200CE', name: 'NIFTY 24 22 FEB 22200 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY2422222200PE', name: 'NIFTY 24 22 FEB 22200 PE', exchange: 'NFO' },
+      { symbol: 'NIFTY2422922300CE', name: 'NIFTY 24 29 FEB 22300 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY2422922300PE', name: 'NIFTY 24 29 FEB 22300 PE', exchange: 'NFO' },
+      
+      // Higher Strikes for Nifty (e.g. 25200)
+      { symbol: 'NIFTY24FEB25200CE', name: 'NIFTY 24 FEB 25200 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY24FEB25200PE', name: 'NIFTY 24 FEB 25200 PE', exchange: 'NFO' },
+      { symbol: 'NIFTY24MAR25200CE', name: 'NIFTY 24 MAR 25200 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY24MAR25200PE', name: 'NIFTY 24 MAR 25200 PE', exchange: 'NFO' },
+
       { symbol: 'BANKNIFTY2420745500CE', name: 'BANKNIFTY 24 07 FEB 45500 CE', exchange: 'NFO' },
       { symbol: 'BANKNIFTY2420745500PE', name: 'BANKNIFTY 24 07 FEB 45500 PE', exchange: 'NFO' },
       { symbol: 'BANKNIFTY2421445800CE', name: 'BANKNIFTY 24 14 FEB 45800 CE', exchange: 'NFO' },
       { symbol: 'BANKNIFTY2421445800PE', name: 'BANKNIFTY 24 14 FEB 45800 PE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2422146000CE', name: 'BANKNIFTY 24 21 FEB 46000 CE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2422146000PE', name: 'BANKNIFTY 24 21 FEB 46000 PE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2422846500CE', name: 'BANKNIFTY 24 28 FEB 46500 CE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY2422846500PE', name: 'BANKNIFTY 24 28 FEB 46500 PE', exchange: 'NFO' },
 
       // Futures
       { symbol: 'NIFTY24FEBFUT', name: 'NIFTY 24 FEB FUT', exchange: 'NFO' },
@@ -91,9 +106,26 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
     
     const filteredNFO = mockNFO.filter(nfo => {
       // Flexible search: all query words must be present in either symbol or name
-      return queryWords.every(word => 
-        nfo.symbol.includes(word) || nfo.name.toUpperCase().includes(word)
-      );
+      // Also handle cases like "nifty25200" by checking if the word is a substring
+      return queryWords.every(word => {
+        const wordUpper = word.toUpperCase();
+        const inSymbol = nfo.symbol.includes(wordUpper);
+        const inName = nfo.name.toUpperCase().includes(wordUpper);
+        
+        if (inSymbol || inName) return true;
+        
+        // If word is something like "NIFTY25200", try to match parts
+        if (wordUpper.startsWith('NIFTY') && wordUpper.length > 5) {
+          const strike = wordUpper.substring(5);
+          return nfo.symbol.startsWith('NIFTY') && nfo.symbol.includes(strike);
+        }
+        if (wordUpper.startsWith('BANKNIFTY') && wordUpper.length > 9) {
+          const strike = wordUpper.substring(9);
+          return nfo.symbol.startsWith('BANKNIFTY') && nfo.symbol.includes(strike);
+        }
+        
+        return false;
+      });
     });
     
     // Always return NFO results if they match, or just prepend them

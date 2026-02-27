@@ -533,9 +533,11 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
   const [orderType, setOrderType] = useState('MARKET');
   const [product, setProduct] = useState('CNC');
   const [price, setPrice] = useState('');
+  const [currentMarketPrice, setCurrentMarketPrice] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isLoadingPrice, setIsLoadingPrice] = useState(false);
   const debounceTimeout = useRef<number | null>(null);
 
   useEffect(() => {
@@ -549,6 +551,35 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
     }
     return () => { if (debounceTimeout.current) clearTimeout(debounceTimeout.current); };
   }, [ticker, isSearchFocused]);
+
+  useEffect(() => {
+    const fetchPrice = async () => {
+      if (ticker && ticker.length >= 2) {
+        setIsLoadingPrice(true);
+        try {
+          const data = await fetchStockData(ticker);
+          if (data) {
+            setCurrentMarketPrice(data.info.currentPrice);
+            // Auto-fill price if it's a limit order and price is empty
+            if (orderType === 'LIMIT' && !price) {
+              setPrice(data.info.currentPrice.toString());
+            }
+          } else {
+            setCurrentMarketPrice(null);
+          }
+        } catch (e) {
+          setCurrentMarketPrice(null);
+        } finally {
+          setIsLoadingPrice(false);
+        }
+      } else {
+        setCurrentMarketPrice(null);
+      }
+    };
+
+    const timer = setTimeout(fetchPrice, 500);
+    return () => clearTimeout(timer);
+  }, [ticker]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -614,7 +645,18 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
             </div>
 
             <div className="relative z-50">
-              <label className="text-[10px] font-bold uppercase text-teal-200/70 tracking-widest mb-1.5 block">Trading Symbol</label>
+              <div className="flex justify-between items-end mb-1.5">
+                <label className="text-[10px] font-bold uppercase text-teal-200/70 tracking-widest block">Trading Symbol</label>
+                {currentMarketPrice !== null && (
+                  <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-2 duration-300">
+                    <span className="text-[8px] font-bold text-teal-200/40 uppercase tracking-widest">LTP:</span>
+                    <span className="text-[10px] font-black text-teal-400 tabular-nums">₹{currentMarketPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+                {isLoadingPrice && (
+                  <Loader2 size={10} className="animate-spin text-teal-500/50 mb-0.5" />
+                )}
+              </div>
               <div className="relative">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-teal-200/50" size={14} />
                 <input 

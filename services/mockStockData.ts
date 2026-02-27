@@ -36,7 +36,8 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
       results = data.quotes
         .filter((q: any) => q.symbol && (q.longname || q.shortname))
         .map((q: any) => ({
-          symbol: q.symbol,
+          // Strip .NS and .BO for Zerodha style symbols
+          symbol: q.symbol.split('.')[0],
           name: q.longname || q.shortname,
           exchange: q.exchange,
         }));
@@ -44,18 +45,30 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
 
     // Mock NFO segment data for Zerodha
     const upperQuery = query.toUpperCase();
+    const queryWords = upperQuery.split(/\s+/).filter(w => w.length > 0);
+    
     const mockNFO = [
       { symbol: 'NIFTY24FEB22000CE', name: 'NIFTY 24 FEB 22000 CE', exchange: 'NFO' },
       { symbol: 'NIFTY24FEB22000PE', name: 'NIFTY 24 FEB 22000 PE', exchange: 'NFO' },
+      { symbol: 'NIFTY24MAR22500CE', name: 'NIFTY 24 MAR 22500 CE', exchange: 'NFO' },
+      { symbol: 'NIFTY24MAR22500PE', name: 'NIFTY 24 MAR 22500 PE', exchange: 'NFO' },
       { symbol: 'BANKNIFTY24FEB46000CE', name: 'BANKNIFTY 24 FEB 46000 CE', exchange: 'NFO' },
       { symbol: 'BANKNIFTY24FEB46000PE', name: 'BANKNIFTY 24 FEB 46000 PE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY24MAR47000CE', name: 'BANKNIFTY 24 MAR 47000 CE', exchange: 'NFO' },
+      { symbol: 'BANKNIFTY24MAR47000PE', name: 'BANKNIFTY 24 MAR 47000 PE', exchange: 'NFO' },
       { symbol: 'NIFTY24FEBFUT', name: 'NIFTY 24 FEB FUT', exchange: 'NFO' },
       { symbol: 'BANKNIFTY24FEBFUT', name: 'BANKNIFTY 24 FEB FUT', exchange: 'NFO' },
+      { symbol: 'RELIANCE24FEBFUT', name: 'RELIANCE 24 FEB FUT', exchange: 'NFO' },
     ];
     
-    const filteredNFO = mockNFO.filter(nfo => nfo.symbol.includes(upperQuery) || nfo.name.includes(upperQuery));
+    const filteredNFO = mockNFO.filter(nfo => {
+      // Flexible search: all query words must be present in either symbol or name
+      return queryWords.every(word => 
+        nfo.symbol.includes(word) || nfo.name.toUpperCase().includes(word)
+      );
+    });
     
-    // Always return NFO results if they match, or just prepend them if query is empty (which is caught above)
+    // Always return NFO results if they match, or just prepend them
     results = [...filteredNFO, ...results];
 
     return results;

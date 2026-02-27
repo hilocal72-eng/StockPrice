@@ -526,7 +526,7 @@ const PriceActionTable: React.FC<{ data: DayAction[] }> = ({ data }) => {
   );
 };
 
-const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; onSuccess: () => void }> = ({ onClose, currentUser, onSuccess }) => {
+const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; onSuccess: () => void; availableFunds: number | null }> = ({ onClose, currentUser, onSuccess, availableFunds }) => {
   const [ticker, setTicker] = useState('');
   const [quantity, setQuantity] = useState('');
   const [transactionType, setTransactionType] = useState('BUY');
@@ -534,27 +534,11 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
   const [product, setProduct] = useState('CNC');
   const [price, setPrice] = useState('');
   const [currentMarketPrice, setCurrentMarketPrice] = useState<number | null>(null);
-  const [availableFunds, setAvailableFunds] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
   const debounceTimeout = useRef<number | null>(null);
-
-  useEffect(() => {
-    const fetchMargins = async () => {
-      try {
-        const res = await fetch('/api/broker/zerodha/margins');
-        const data = await res.json();
-        if (data.status === 'success') {
-          setAvailableFunds(data.data.equity.available.cash);
-        }
-      } catch (e) {
-        console.error('Failed to fetch margins:', e);
-      }
-    };
-    fetchMargins();
-  }, []);
 
   useEffect(() => {
     if (ticker.trim() && isSearchFocused) {
@@ -650,12 +634,10 @@ const ZerodhaTradeModal: React.FC<{ onClose: () => void; currentUser: string; on
                 <h2 className="text-lg font-bold text-teal-50 tracking-tight">Live Order</h2>
                 <div className="flex items-center gap-2">
                   <p className="text-[10px] font-medium text-teal-200/60 uppercase tracking-widest">Zerodha Integration</p>
-                  {availableFunds !== null && (
-                    <>
-                      <span className="w-1 h-1 rounded-full bg-teal-500/40" />
-                      <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Margin: ₹{availableFunds.toLocaleString('en-IN')}</p>
-                    </>
-                  )}
+                  <span className="w-1 h-1 rounded-full bg-teal-500/40" />
+                  <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">
+                    {availableFunds !== null ? `Funds: ₹${availableFunds.toLocaleString('en-IN')}` : 'Loading Funds...'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -829,6 +811,7 @@ const App: React.FC = () => {
   const [zerodhaHoldings, setZerodhaHoldings] = useState<ZerodhaHolding[]>([]);
   const [zerodhaPositions, setZerodhaPositions] = useState<ZerodhaPosition[]>([]);
   const [zerodhaOrders, setZerodhaOrders] = useState<any[]>([]);
+  const [zerodhaMargins, setZerodhaMargins] = useState<any | null>(null);
   const [isBrokerLoading, setIsBrokerLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(localStorage.getItem('stkr_current_user'));
   const [showSplash, setShowSplash] = useState(true);
@@ -910,18 +893,21 @@ const App: React.FC = () => {
     if (!currentUser || tradingMode !== 'live') return;
     setIsBrokerLoading(true);
     try {
-      const [holdingsRes, positionsRes, ordersRes] = await Promise.all([
+      const [holdingsRes, positionsRes, ordersRes, marginsRes] = await Promise.all([
         fetch(`/api/broker/zerodha/holdings?username=${encodeURIComponent(currentUser)}`),
         fetch(`/api/broker/zerodha/positions?username=${encodeURIComponent(currentUser)}`),
-        fetch(`/api/broker/zerodha/orders?username=${encodeURIComponent(currentUser)}`)
+        fetch(`/api/broker/zerodha/orders?username=${encodeURIComponent(currentUser)}`),
+        fetch(`/api/broker/zerodha/margins?username=${encodeURIComponent(currentUser)}`)
       ]);
       
       const holdingsData = await holdingsRes.json();
       const positionsData = await positionsRes.json();
       const ordersData = await ordersRes.json();
+      const marginsData = await marginsRes.json();
       
       if (holdingsData.status === 'success') setZerodhaHoldings(holdingsData.data);
       if (positionsData.status === 'success') setZerodhaPositions(positionsData.data.net);
+      if (marginsData.status === 'success') setZerodhaMargins(marginsData.data);
       if (ordersData.status === 'success') {
         // Sort orders by time descending
         const sortedOrders = ordersData.data.sort((a: any, b: any) => new Date(b.order_timestamp).getTime() - new Date(a.order_timestamp).getTime());
@@ -1376,7 +1362,14 @@ const App: React.FC = () => {
         {selectedSentiment && <SentimentDetailModal ticker={selectedSentiment.ticker} analysis={selectedSentiment.analysis} onClose={() => setSelectedSentiment(null)} />}
         {isAlertModalOpen && stockData && <AlertModal ticker={stockData.info.ticker} currentPrice={stockData.info.currentPrice} onClose={() => setIsAlertModalOpen(false)} onSave={handleSaveAlert} />}
         {isAddTradeModalOpen && <AddTradeModal onClose={() => setIsAddTradeModalOpen(false)} onAdd={handleAddPortfolioItem} />}
-        {isZerodhaTradeModalOpen && currentUser && <ZerodhaTradeModal onClose={() => setIsZerodhaTradeModalOpen(false)} currentUser={currentUser} onSuccess={fetchZerodhaData} />}
+        {isZerodhaTradeModalOpen && currentUser && (
+          <ZerodhaTradeModal 
+            onClose={() => setIsZerodhaTradeModalOpen(false)} 
+            currentUser={currentUser} 
+            onSuccess={fetchZerodhaData} 
+            availableFunds={zerodhaMargins?.equity?.available?.cash || null}
+          />
+        )}
         {isModelSettingsOpen && <ModelSettingsModal onClose={() => setIsModelSettingsOpen(false)} />}
         {isAIModalOpen && stockData && (
           <AIIntelligenceModal 

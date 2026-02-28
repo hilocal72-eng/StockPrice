@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import OneSignal from 'react-onesignal';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield, AlertCircle, ChevronDown } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield, AlertCircle, ChevronDown, ArrowRight, MoveHorizontal, MoveVertical, Square, Circle, Type, Ruler, Maximize, AlignJustify, GitBranch, Equal, EyeOff, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem, TradingMode, ZerodhaHolding, ZerodhaPosition, ZerodhaProfile } from './types.ts';
@@ -14,13 +14,15 @@ import AdminPanelModal from './components/AdminPanelModal.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
 
 type View = 'dashboard' | 'favorites' | 'trade' | 'z';
-type Timeframe = '15m' | '1D';
+type Timeframe = '5m' | '15m' | '1D' | '1W';
 type DrawingTool = 'horizontal' | 'trend' | null;
 type SentimentFilter = 'all' | 'bullish' | 'bearish';
 
 const TIMEFRAMES: Record<Timeframe, { range: string; interval: string }> = {
+  '5m': { range: '1d', interval: '5m' },
   '15m': { range: '5d', interval: '15m' },
-  '1D': { range: '1y', interval: '1d' }
+  '1D': { range: '1y', interval: '1d' },
+  '1W': { range: '2y', interval: '1wk' }
 };
 
 const RECOMMENDED_MODELS = [
@@ -1121,6 +1123,7 @@ const App: React.FC = () => {
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [clearLinesSignal, setClearLinesSignal] = useState(0);
+  const [saveChartSignal, setSaveChartSignal] = useState(0);
 
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [isAddTradeModalOpen, setIsAddTradeModalOpen] = useState(false);
@@ -1297,6 +1300,10 @@ const App: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    handleFetchData('RELIANCE.NS', '1D');
+  }, [handleFetchData]);
+
   const handleSaveAlert = async (price: number, condition: 'above' | 'below'): Promise<boolean> => {
     if (!stockData) return false;
     setError(null);
@@ -1464,21 +1471,93 @@ const App: React.FC = () => {
       
       <AnimatePresence>
         {isChartModalOpen && stockData && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex flex-col">
-            <div className="px-6 py-3 flex justify-between items-start text-white border-b border-white/30 bg-black/70">
-                <div className="flex flex-col gap-2">
-                    <h2 className="text-[11px] font-black tracking-[0.2em] uppercase text-white/50">{stockData.info.ticker}</h2>
-                    <div className="flex items-center gap-2">
-                        {(['15m', '1D'] as Timeframe[]).map(tf => (<button key={tf} onClick={() => handleTimeframeChange(tf)} className={`px-2.5 py-1 text-[9px] font-black uppercase rounded-md border-2 transition-all flex items-center gap-1.5 ${currentTimeframe === tf ? 'bg-pink-600 border-pink-400 text-white shadow-lg' : 'bg-white/15 border-white/40 text-white/70 hover:text-white hover:bg-white/25'}`}>{tf === '15m' ? <Timer size={10} /> : <CalendarDays size={10} />}{tf}</button>))}
-                        <div className="w-[1px] h-4 bg-white/20 mx-1" />
-                        <button onClick={() => setActiveTool(activeTool === 'horizontal' ? null : 'horizontal')} className={`p-1.5 rounded-md border-2 transition-all flex items-center gap-1.5 ${activeTool === 'horizontal' ? 'bg-yellow-500 border-yellow-300 text-black shadow-lg' : 'bg-white/15 border-white/40 text-white/70 hover:text-white hover:bg-white/25'}`}><SeparatorHorizontal size={12} strokeWidth={3} /></button>
-                        <button onClick={() => setActiveTool(activeTool === 'trend' ? null : 'trend')} className={`p-1.5 rounded-md border-2 transition-all flex items-center gap-1.5 ${activeTool === 'trend' ? 'bg-yellow-500 border-yellow-300 text-black shadow-lg' : 'bg-white/15 border-white/40 text-white/70 hover:text-white hover:bg-white/25'}`}><Milestone size={12} strokeWidth={3} className="-rotate-45" /></button>
-                        <button onClick={() => setClearLinesSignal(s => s + 1)} className="p-1.5 rounded-md border-2 bg-white/15 border-white/40 text-white/70 hover:text-rose-400 hover:border-rose-400/80 hover:bg-white/25 transition-all"><Trash2 size={12} strokeWidth={2.5} /></button>
-                    </div>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[200] bg-white flex flex-col overflow-hidden"
+          >
+            {/* Header Toolbar */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white shrink-0 z-[300]">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center bg-gray-50 rounded-lg p-1 gap-1 border border-gray-100">
+                  {(['5m', '15m', '1D', '1W'] as const).map((tf) => (
+                    <button
+                      key={tf}
+                      onClick={() => handleTimeframeChange(tf)}
+                      className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${
+                        currentTimeframe === tf 
+                          ? 'bg-white text-black shadow-sm border border-gray-200' 
+                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                      }`}
+                    >
+                      {tf}
+                    </button>
+                  ))}
                 </div>
-                <button onClick={() => { setIsChartModalOpen(false); setActiveTool(null); }} className="p-2 bg-white/15 rounded-xl hover:bg-rose-600 transition-all text-white/60 hover:text-white border border-white/40"><X size={16} strokeWidth={3} /></button>
+              </div>
+
+              <button 
+                onClick={() => { setIsChartModalOpen(false); setActiveTool(null); }} 
+                className="p-2 hover:bg-rose-50 rounded-xl transition-colors text-gray-400 hover:text-rose-500 border border-transparent hover:border-rose-100"
+              >
+                <X size={20} strokeWidth={2.5} />
+              </button>
             </div>
-            <div className="flex-1 p-4"><TerminalChart key={stockData.info.ticker} ticker={stockData.info.ticker} data={stockData.history} isModal={true} onTimeframeChange={handleTimeframeChange} activeTimeframe={currentTimeframe} activeTool={activeTool} clearLinesSignal={clearLinesSignal} /></div>
+
+            {/* Drawing Tools Strip */}
+            <div className="highcharts-bindings-wrapper shrink-0 border-b border-gray-100 bg-white px-4 py-2 flex items-center overflow-x-auto custom-scrollbar z-[250] shadow-sm">
+              <ul className="highcharts-stocktools-toolbar flex items-center gap-2 m-0 p-0 list-none">
+                {[
+                  { id: 'indicators', title: 'Indicators', icon: Activity },
+                  { id: 'segment', title: 'Segment', icon: Minus },
+                  { id: 'arrow', title: 'Arrow', icon: ArrowRight },
+                  { id: 'line', title: 'Line', icon: TrendingUp },
+                  { id: 'horizontal-line', title: 'Horizontal Line', icon: MoveHorizontal },
+                  { id: 'vertical-line', title: 'Vertical Line', icon: MoveVertical },
+                  { id: 'rectangle', title: 'Rectangle', icon: Square },
+                  { id: 'circle', title: 'Circle', icon: Circle },
+                  { id: 'label', title: 'Label', icon: Type },
+                  { id: 'measure-x', title: 'Measure X', icon: Ruler },
+                  { id: 'measure-xy', title: 'Measure XY', icon: Maximize },
+                  { id: 'fibonacci', title: 'Fibonacci', icon: AlignJustify },
+                  { id: 'pitchfork', title: 'Pitchfork', icon: GitBranch },
+                  { id: 'parallel-channel', title: 'Parallel Channel', icon: Equal },
+                  { id: 'toggle-annotations', title: 'Toggle Annotations', icon: EyeOff },
+                  { id: 'custom-clear', title: 'Clear Drawings', icon: Trash2, action: () => setClearLinesSignal(Date.now()) },
+                  { id: 'custom-save', title: 'Save Chart', icon: Save, action: () => setSaveChartSignal(Date.now()) }
+                ].map(tool => {
+                  const Icon = tool.icon;
+                  return (
+                    <li 
+                      key={tool.id} 
+                      onClick={tool.action}
+                      className={`${tool.id.startsWith('custom-') ? '' : `highcharts-${tool.id}`} w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 cursor-pointer transition-all shrink-0`}
+                      title={tool.title}
+                    >
+                      <span className="highcharts-menu-item-btn w-full h-full flex items-center justify-center pointer-events-none">
+                        <Icon size={18} strokeWidth={2} />
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            {/* Chart Container */}
+            <div className="flex-1 w-full h-full relative min-h-0 bg-white">
+              <TerminalChart 
+                key={stockData.info.ticker} 
+                ticker={stockData.info.ticker} 
+                data={stockData.history} 
+                isModal={true} 
+                onTimeframeChange={handleTimeframeChange} 
+                activeTimeframe={currentTimeframe} 
+                activeTool={activeTool} 
+                clearLinesSignal={clearLinesSignal} 
+                saveChartSignal={saveChartSignal}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1598,7 +1677,22 @@ const App: React.FC = () => {
                 </div>
               </section>
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
-                <div className="lg:col-span-3 h-[380px] w-full glossy-card !border-white/40 p-0.5 rounded-xl relative group shadow-xl bg-black/20 overflow-hidden">{dailyHistory && <TerminalChart ticker={stockData.info.ticker} data={dailyHistory.slice(-20)} isModal={false} />}<button onClick={() => setIsChartModalOpen(true)} className="absolute top-3 right-3 z-10 p-2.5 bg-black/60 rounded-lg border border-white/10 backdrop-blur-md text-white/60 hover:text-white hover:bg-pink-600 transition-all opacity-0 group-hover:opacity-100"><Expand size={14} /></button></div>
+                <div className="lg:col-span-3 h-[380px] w-full glossy-card !border-white/40 p-0.5 rounded-xl relative group shadow-xl bg-black/20 overflow-hidden">
+                {loading ? (
+                  <div className="w-full h-full flex items-center justify-center text-white/50 gap-2">
+                    <Loader2 className="animate-spin" size={24} />
+                    <span className="text-xs font-medium tracking-widest uppercase">Loading Market Data...</span>
+                  </div>
+                ) : dailyHistory ? (
+                  <TerminalChart ticker={stockData.info.ticker} data={dailyHistory.slice(-20)} isModal={false} />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-white/30 gap-3">
+                    <Activity size={48} strokeWidth={1} />
+                    <span className="text-xs font-medium tracking-widest uppercase">Select a stock to view chart</span>
+                  </div>
+                )}
+                <button onClick={() => setIsChartModalOpen(true)} className="absolute top-3 right-3 z-10 p-2.5 bg-black/60 rounded-lg border border-white/10 backdrop-blur-md text-white/60 hover:text-white hover:bg-pink-600 transition-all opacity-0 group-hover:opacity-100"><Expand size={14} /></button>
+              </div>
                 <div className="lg:col-span-1"><PriceActionTable data={stockData.dailyAction} /></div>
               </div>
             </div>

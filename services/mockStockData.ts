@@ -210,7 +210,10 @@ export const fetchStockData = async (ticker: string, range: string = '1y', inter
     }
   }
 
-  if (!chartResult || !historyResult) return null;
+  if (!chartResult || !historyResult) {
+    console.warn("API returned no data, generating mock data for:", ticker);
+    return generateMockStockData(ticker, range, interval);
+  }
 
   try {
     const meta = chartResult.meta;
@@ -276,8 +279,102 @@ export const fetchStockData = async (ticker: string, range: string = '1y', inter
     return result;
   } catch (error) {
     console.error("Processing Error:", error);
-    return null;
+    return generateMockStockData(ticker, range, interval);
   }
+};
+
+const generateMockStockData = (ticker: string, range: string = '1y', interval: string = '1d'): StockDetails => {
+  const now = Math.floor(Date.now() / 1000);
+  
+  let points = 365;
+  let intervalSeconds = 86400; // 1 day
+  
+  if (interval === '5m') {
+    intervalSeconds = 300;
+    points = 78; // 1 day of 5m candles (approx 6.5 hours)
+  } else if (interval === '15m') {
+    intervalSeconds = 900;
+    points = 100; // ~3 days
+  } else if (interval === '1wk') {
+    intervalSeconds = 604800;
+    points = 104; // 2 years
+  }
+
+  const history: PricePoint[] = [];
+  
+  // Generate deterministic random data based on ticker string
+  let seed = 0;
+  for (let i = 0; i < ticker.length; i++) {
+    seed += ticker.charCodeAt(i);
+  }
+  
+  const random = () => {
+    const x = Math.sin(seed++) * 10000;
+    return x - Math.floor(x);
+  };
+
+  let price = 100 + (random() * 900); // Start between 100 and 1000
+  const volatility = 0.02;
+
+  // Generate data
+  for (let i = points; i >= 0; i--) {
+    const time = now - (i * intervalSeconds);
+    const changePercent = volatility * (random() - 0.5);
+    const change = price * changePercent;
+    const open = price;
+    const close = price + change;
+    const high = Math.max(open, close) + (price * volatility * random());
+    const low = Math.min(open, close) - (price * volatility * random());
+    const volume = Math.floor(100000 + random() * 1000000);
+
+    history.push({
+      time,
+      open: parseFloat(open.toFixed(2)),
+      high: parseFloat(high.toFixed(2)),
+      low: parseFloat(low.toFixed(2)),
+      close: parseFloat(close.toFixed(2)),
+      volume
+    });
+    price = close;
+  }
+
+  const currentPrice = history[history.length - 1].close;
+  const prevClose = history[history.length - 2].close;
+  const change = currentPrice - prevClose;
+  const changePercent = (change / prevClose) * 100;
+
+  const info: StockInfo = {
+    ticker: ticker.toUpperCase(),
+    name: `${ticker.toUpperCase()} (Simulated)`,
+    currentPrice: parseFloat(currentPrice.toFixed(2)),
+    change: parseFloat(change.toFixed(2)),
+    changePercent: parseFloat(changePercent.toFixed(2)),
+    marketCap: '100B',
+    dividendYield: '1.5%',
+    peRatio: '25.5',
+    sentiment: generateSentimentAnalysis(changePercent, history)
+  };
+
+  const dailyAction: DayAction[] = [];
+  for(let i = 0; i < 5; i++) {
+      const idx = history.length - 1 - i;
+      if(idx > 0) {
+          const p = history[idx];
+          const prev = history[idx-1];
+          dailyAction.push({
+            date: new Date(p.time * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            open: p.open,
+            high: p.high,
+            low: p.low,
+            close: p.close,
+            volume: p.volume,
+            change: parseFloat((p.close - prev.close).toFixed(2)),
+            changePercent: parseFloat(((p.close - prev.close) / prev.close * 100).toFixed(2))
+          });
+      }
+  }
+
+  return { info, history, dailyAction };
 };
 
 const formatMarketCap = (labelValue: any) => {

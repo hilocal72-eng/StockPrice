@@ -228,15 +228,15 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
       spacing: isModal ? [0, 0, 0, 0] : [10, 10, 15, 10],
       panning: {
         enabled: isModal,
-        type: 'x'
+        type: 'xy'
       },
-      zoomType: isModal ? 'x' : undefined,
+      zoomType: undefined,
       zooming: {
         mouseWheel: {
           enabled: isModal
         }
       },
-      panKey: 'shift'
+      panKey: undefined
     },
     rangeSelector: {
       enabled: false // Disable built-in range selector
@@ -292,7 +292,7 @@ const TerminalChart: React.FC<TerminalChartProps> = ({
       gridLineColor: isModal ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.05)',
       opposite: true,
       resize: {
-        enabled: false // Disable resize to remove the line separator
+        enabled: isModal // Enable resize in modal mode
       },
       crosshair: {
         width: 1,

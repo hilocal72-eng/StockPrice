@@ -1532,7 +1532,7 @@ const App: React.FC = () => {
                     <li 
                       key={tool.id} 
                       onClick={tool.action}
-                      className={`${tool.id.startsWith('custom-') ? '' : `highcharts-${tool.id}`} w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 cursor-pointer transition-all shrink-0`}
+                      className={`${tool.id.startsWith('custom-') ? '' : `highcharts-${tool.id}`} w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 cursor-pointer transition-all shrink-0 [&.highcharts-active]:bg-gray-200 [&.highcharts-active]:text-gray-900 [&.highcharts-active]:shadow-inner`}
                       title={tool.title}
                     >
                       <span className="highcharts-menu-item-btn w-full h-full flex items-center justify-center pointer-events-none">

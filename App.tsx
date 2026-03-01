@@ -11,6 +11,7 @@ import WatchlistPulseModal from './components/WatchlistPulseModal.tsx';
 import LoginScreen from './components/LoginScreen.tsx';
 import SplashScreen from './components/SplashScreen.tsx';
 import AdminPanelModal from './components/AdminPanelModal.tsx';
+import ScreenerModal from './components/ScreenerModal.tsx';
 import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './services/alertService.ts';
 
 type View = 'dashboard' | 'favorites' | 'trade' | 'z';
@@ -808,6 +809,7 @@ const App: React.FC = () => {
   const [isPulseModalOpen, setIsPulseModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isBrokerModalOpen, setIsBrokerModalOpen] = useState(false);
+  const [isScreenerModalOpen, setIsScreenerModalOpen] = useState(false);
   const [tradingMode, setTradingMode] = useState<TradingMode>((localStorage.getItem('stkr_trading_mode') as TradingMode) || 'paper');
   const [brokerStatus, setBrokerStatus] = useState<{ connected: boolean; broker?: string; last_sync?: string }>({ connected: false });
   const [zerodhaHoldings, setZerodhaHoldings] = useState<ZerodhaHolding[]>([]);
@@ -1700,7 +1702,16 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
-                <div className="lg:col-span-1"><PriceActionTable data={stockData.dailyAction} /></div>
+                <div className="lg:col-span-1 flex flex-col gap-4">
+                  <PriceActionTable data={stockData.dailyAction} />
+                  <button 
+                    onClick={() => setIsScreenerModalOpen(true)}
+                    className="w-full py-3.5 bg-pink-600 hover:bg-pink-500 rounded-xl flex items-center justify-center gap-2 text-white transition-all shadow-[0_0_20px_rgba(236,72,153,0.3)] border border-pink-400/50 relative z-10"
+                  >
+                    <Search size={16} className="text-white" />
+                    <span className="text-[11px] font-black uppercase tracking-widest">Open Screener</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : activeView === 'trade' ? (
@@ -2222,7 +2233,7 @@ const App: React.FC = () => {
                </div>
             </div>
           )}
-          <div className="h-12 md:hidden"></div>
+          <div className="h-24 md:hidden"></div>
         </div>
       </main>
       <nav className="md:hidden fixed bottom-4 left-4 right-4 z-[50] h-[58px] glossy-card !bg-black/70 !rounded-2xl border !border-white/30 flex items-center justify-around shadow-2xl px-2">
@@ -2234,6 +2245,7 @@ const App: React.FC = () => {
           <button onClick={() => setIsAdminModalOpen(true)} className="flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all text-pink-500"><Shield size={18} strokeWidth={3} /><span className="text-[7px] font-black uppercase tracking-[0.15em]">Admin</span></button>
         )}
       </nav>
+      <ScreenerModal isOpen={isScreenerModalOpen} onClose={() => setIsScreenerModalOpen(false)} onSelectStock={handleSelectAndSearch} />
     </div>
   );
 };

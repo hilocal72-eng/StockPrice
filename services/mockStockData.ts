@@ -138,6 +138,74 @@ export const searchStocks = async (query: string): Promise<SearchResult[]> => {
   }
 };
 
+export const INDICES = {
+  'NIFTY 50': ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'BHARTIARTL.NS', 'SBIN.NS', 'INFY.NS', 'ITC.NS', 'HINDUNILVR.NS', 'LT.NS', 'BAJFINANCE.NS', 'HCLTECH.NS', 'MARUTI.NS', 'SUNPHARMA.NS', 'TATAMOTORS.NS', 'TATASTEEL.NS', 'KOTAKBANK.NS', 'TITAN.NS', 'ADANIENT.NS', 'ASIANPAINT.NS', 'BAJAJFINSV.NS', 'WIPRO.NS', 'ULTRACEMCO.NS', 'ONGC.NS', 'NTPC.NS', 'POWERGRID.NS', 'M&M.NS', 'LTIM.NS', 'COALINDIA.NS', 'ADANIPORTS.NS', 'HINDALCO.NS', 'BRITANNIA.NS', 'TECHM.NS', 'EICHERMOT.NS', 'DIVISLAB.NS', 'GRASIM.NS', 'CIPLA.NS', 'JSWSTEEL.NS', 'HEROMOTOCO.NS', 'APOLLOHOSP.NS', 'DRREDDY.NS', 'SBILIFE.NS', 'HDFCLIFE.NS', 'BAJAJ-AUTO.NS', 'UPL.NS', 'INDUSINDBK.NS', 'NESTLEIND.NS', 'BPCL.NS'],
+  'NIFTY BANK': ['HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS', 'KOTAKBANK.NS', 'AXISBANK.NS', 'INDUSINDBK.NS', 'BANKBARODA.NS', 'AUBANK.NS', 'FEDERALBNK.NS', 'IDFCFIRSTB.NS', 'PNB.NS', 'BANDHANBNK.NS'],
+  'NIFTY IT': ['TCS.NS', 'INFY.NS', 'HCLTECH.NS', 'WIPRO.NS', 'TECHM.NS', 'LTIM.NS', 'COFORGE.NS', 'PERSISTENT.NS', 'MPHASIS.NS', 'LTTS.NS'],
+};
+
+export interface ScreenerResult {
+  symbol: string;
+  name: string;
+  currentPrice: number;
+  changePercentFromOpen: number;
+  volume: number;
+}
+
+export const runScreener = async (indexName: keyof typeof INDICES, minPct: number, maxPct: number, direction: 'above' | 'below' = 'above'): Promise<ScreenerResult[]> => {
+  try {
+    const symbols = INDICES[indexName];
+    if (!symbols) return [];
+
+    const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}`;
+    const url = `/api/proxy`;
+    const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
+    
+    if (!response.ok) throw new Error('Failed to fetch quotes');
+    const data = await response.json();
+    
+    if (!data.quoteResponse || !data.quoteResponse.result) return [];
+
+    const results: ScreenerResult[] = [];
+
+    data.quoteResponse.result.forEach((quote: any) => {
+      const currentPrice = quote.regularMarketPrice;
+      const openPrice = quote.regularMarketOpen;
+      
+      if (currentPrice && openPrice) {
+        const changeFromOpen = ((currentPrice - openPrice) / openPrice) * 100;
+        
+        let isMatch = false;
+        if (direction === 'above') {
+          isMatch = changeFromOpen >= minPct && changeFromOpen <= maxPct;
+        } else {
+          isMatch = changeFromOpen <= -minPct && changeFromOpen >= -maxPct;
+        }
+        
+        if (isMatch) {
+          results.push({
+            symbol: quote.symbol.replace('.NS', ''),
+            name: quote.shortName || quote.longName || quote.symbol,
+            currentPrice: currentPrice,
+            changePercentFromOpen: changeFromOpen,
+            volume: quote.regularMarketVolume || 0
+          });
+        }
+      }
+    });
+
+    // Sort by highest percentage change from open
+    if (direction === 'above') {
+      return results.sort((a, b) => b.changePercentFromOpen - a.changePercentFromOpen).slice(0, 10);
+    } else {
+      return results.sort((a, b) => a.changePercentFromOpen - b.changePercentFromOpen).slice(0, 10);
+    }
+  } catch (e) {
+    console.error('Screener error:', e);
+    return [];
+  }
+};
+
 const generateSentimentAnalysis = (changePercent: number, history: PricePoint[]): SentimentAnalysis => {
   const type = changePercent > 0.5 ? 'bullish' : changePercent < -0.5 ? 'bearish' : 'neutral';
   

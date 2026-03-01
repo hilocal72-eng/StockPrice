@@ -37,6 +37,9 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
   const [drawings, setDrawings] = useState<any[]>([]);
   const drawingsRef = useRef(drawings);
   const activeToolRef = useRef(activeTool);
+  
+  const lastSaveSignal = useRef(saveChartSignal);
+  const lastClearSignal = useRef(clearLinesSignal);
 
   useEffect(() => {
     drawingsRef.current = drawings;
@@ -170,10 +173,9 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
       if (nearestIdx !== -1) {
         const lineObj = drawingObjectsRef.current.find(obj => obj.type === 'hline' && obj.index === nearestIdx);
         if (lineObj) {
-          e.stopPropagation();
           draggingLineRef.current = { index: nearestIdx, line: lineObj.line };
           isDraggingRef.current = true;
-          chart.applyOptions({ handleScroll: false });
+          chart.applyOptions({ handleScroll: { pressedMouseMove: false } });
         }
       }
     };
@@ -210,10 +212,9 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
       if (nearestIdx !== -1) {
         const lineObj = drawingObjectsRef.current.find(obj => obj.type === 'hline' && obj.index === nearestIdx);
         if (lineObj) {
-          e.stopPropagation();
           draggingLineRef.current = { index: nearestIdx, line: lineObj.line };
           isDraggingRef.current = true;
-          chart.applyOptions({ handleScroll: false });
+          chart.applyOptions({ handleScroll: { pressedMouseMove: false } });
           if (e.cancelable) e.preventDefault();
         }
       }
@@ -221,7 +222,6 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
 
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingRef.current && draggingLineRef.current && seriesRef.current) {
-        e.stopPropagation();
         const rect = chartContainerRef.current?.getBoundingClientRect();
         if (!rect) return;
         const y = e.clientY - rect.top;
@@ -234,7 +234,6 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
 
     const handleTouchMove = (e: TouchEvent) => {
       if (isDraggingRef.current && draggingLineRef.current && seriesRef.current && e.touches.length === 1) {
-        e.stopPropagation();
         const rect = chartContainerRef.current?.getBoundingClientRect();
         if (!rect) return;
         const touch = e.touches[0];
@@ -249,7 +248,6 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
 
     const handleMouseUp = (e: Event) => {
       if (isDraggingRef.current && draggingLineRef.current) {
-        e.stopPropagation();
         const newPrice = draggingLineRef.current.line.options().price;
         const idx = draggingLineRef.current.index;
         
@@ -269,12 +267,12 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
 
     const container = chartContainerRef.current;
     if (container) {
-      container.addEventListener('mousedown', handleMouseDown, { capture: true });
-      container.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
-      window.addEventListener('mousemove', handleMouseMove, { capture: true });
-      window.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
-      window.addEventListener('mouseup', handleMouseUp, { capture: true });
-      window.addEventListener('touchend', handleMouseUp, { capture: true });
+      container.addEventListener('mousedown', handleMouseDown);
+      container.addEventListener('touchstart', handleTouchStart, { passive: false });
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchend', handleMouseUp);
     }
 
     window.addEventListener('resize', handleResize);
@@ -282,13 +280,13 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
       if (container) {
-        container.removeEventListener('mousedown', handleMouseDown, true);
-        container.removeEventListener('touchstart', handleTouchStart, true);
+        container.removeEventListener('mousedown', handleMouseDown);
+        container.removeEventListener('touchstart', handleTouchStart);
       }
-      window.removeEventListener('mousemove', handleMouseMove, true);
-      window.removeEventListener('touchmove', handleTouchMove, true);
-      window.removeEventListener('mouseup', handleMouseUp, true);
-      window.removeEventListener('touchend', handleMouseUp, true);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchend', handleMouseUp);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -424,7 +422,8 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
 
   // Handle Clear Drawings
   useEffect(() => {
-    if (clearLinesSignal) {
+    if (clearLinesSignal && clearLinesSignal !== lastClearSignal.current) {
+      lastClearSignal.current = clearLinesSignal;
       setDrawings([]);
       localStorage.removeItem(`lw-drawings-${ticker}`);
       window.dispatchEvent(new CustomEvent('stkr-toast', { detail: { id: Date.now(), type: 'info', message: 'Drawings cleared' } }));
@@ -433,7 +432,8 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
 
   // Handle Save Drawings
   useEffect(() => {
-    if (saveChartSignal) {
+    if (saveChartSignal && saveChartSignal !== lastSaveSignal.current) {
+      lastSaveSignal.current = saveChartSignal;
       localStorage.setItem(`lw-drawings-${ticker}`, JSON.stringify(drawings));
       window.dispatchEvent(new CustomEvent('stkr-toast', { detail: { id: Date.now(), type: 'success', message: 'Drawings saved' } }));
     }

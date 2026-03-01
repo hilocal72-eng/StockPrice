@@ -129,3 +129,16 @@ body {
   left: 50% !important;
   transform: translateX(-50%) !important;
 }
+
+/* Shrink TradingView logo in Lightweight Charts */
+.chart-container a[href*="tradingview.com"] {
+  width: 0.1px !important;
+  height: 0.1px !important;
+  overflow: hidden !important;
+  display: block !important;
+  opacity: 0.01 !important;
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  z-index: 1 !important;
+}

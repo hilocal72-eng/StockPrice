@@ -15,14 +15,14 @@ import { getAnonymousId, createAlert, fetchUserAlerts, deleteAlert } from './ser
 
 type View = 'dashboard' | 'favorites' | 'trade' | 'z';
 type Timeframe = '5m' | '15m' | '1D' | '1W';
-type DrawingTool = 'horizontal' | 'trend' | null;
+type DrawingTool = string | null;
 type SentimentFilter = 'all' | 'bullish' | 'bearish';
 
 const TIMEFRAMES: Record<Timeframe, { range: string; interval: string }> = {
-  '5m': { range: '1d', interval: '5m' },
-  '15m': { range: '5d', interval: '15m' },
-  '1D': { range: '1y', interval: '1d' },
-  '1W': { range: '2y', interval: '1wk' }
+  '5m': { range: '60d', interval: '5m' },
+  '15m': { range: '60d', interval: '15m' },
+  '1D': { range: '5y', interval: '1d' },
+  '1W': { range: 'max', interval: '1wk' }
 };
 
 const RECOMMENDED_MODELS = [
@@ -1122,6 +1122,15 @@ const App: React.FC = () => {
   const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
   const [currentTimeframe, setCurrentTimeframe] = useState<Timeframe>('1D');
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveTool(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const [clearLinesSignal, setClearLinesSignal] = useState(0);
   const [saveChartSignal, setSaveChartSignal] = useState(0);
 
@@ -1475,88 +1484,82 @@ const App: React.FC = () => {
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }} 
-            className="fixed inset-0 z-[200] bg-white flex flex-col overflow-hidden"
+            className="fixed inset-0 z-[500] bg-white flex flex-col overflow-hidden"
           >
-            {/* Header Toolbar */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white shrink-0 z-[300]">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center bg-gray-50 rounded-lg p-1 gap-1 border border-gray-100">
-                  {(['5m', '15m', '1D', '1W'] as const).map((tf) => (
-                    <button
-                      key={tf}
-                      onClick={() => handleTimeframeChange(tf)}
-                      className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${
-                        currentTimeframe === tf 
-                          ? 'bg-white text-black shadow-sm border border-gray-200' 
-                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                      }`}
-                    >
-                      {tf}
-                    </button>
-                  ))}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Header Toolbar */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white shrink-0 z-[300]">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center bg-gray-50 rounded-lg p-1 gap-1 border border-gray-100">
+                    {(['5m', '15m', '1D', '1W'] as const).map((tf) => (
+                      <button
+                        key={tf}
+                        onClick={() => handleTimeframeChange(tf)}
+                        className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${
+                          currentTimeframe === tf 
+                            ? 'bg-white text-black shadow-sm border border-gray-200' 
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                        }`}
+                      >
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => { setIsChartModalOpen(false); setActiveTool(null); }} 
+                  className="p-2 hover:bg-rose-50 rounded-xl transition-colors text-gray-400 hover:text-rose-500 border border-transparent hover:border-rose-100"
+                >
+                  <X size={20} strokeWidth={2.5} />
+                </button>
+              </div>
+
+              {/* Drawing Tools Strip */}
+              <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-1.5 flex items-center justify-center z-[250] shadow-sm">
+                <div className="flex items-center gap-1 m-0 p-0.5 border border-gray-300 rounded-lg bg-gray-50/50 shadow-sm max-w-fit">
+                  {[
+                    { id: 'segment', title: 'Trendline', icon: Minus },
+                    { id: 'horizontal-line', title: 'Horizontal Line', icon: MoveHorizontal },
+                    { id: 'custom-clear', title: 'Clear Drawings', icon: Trash2, action: () => setClearLinesSignal(Date.now()) },
+                    { id: 'custom-save', title: 'Save Chart', icon: Save, action: () => setSaveChartSignal(Date.now()) }
+                  ].map(tool => {
+                    const Icon = tool.icon;
+                    const isActive = activeTool === tool.id;
+                    return (
+                      <div 
+                        key={tool.id} 
+                        onClick={() => {
+                          if (tool.action) {
+                            tool.action();
+                          } else {
+                            setActiveTool(isActive ? null : tool.id);
+                          }
+                        }}
+                        className={`w-9 h-9 sm:w-8 sm:h-8 flex items-center justify-center rounded-md hover:bg-gray-200 cursor-pointer transition-all shrink-0 ${isActive ? 'bg-blue-100 text-blue-600 border border-blue-300 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                        title={tool.title}
+                      >
+                        <Icon size={16} strokeWidth={2} />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              <button 
-                onClick={() => { setIsChartModalOpen(false); setActiveTool(null); }} 
-                className="p-2 hover:bg-rose-50 rounded-xl transition-colors text-gray-400 hover:text-rose-500 border border-transparent hover:border-rose-100"
-              >
-                <X size={20} strokeWidth={2.5} />
-              </button>
-            </div>
-
-            {/* Drawing Tools Strip */}
-            <div className="highcharts-bindings-wrapper shrink-0 border-b border-gray-100 bg-white px-4 py-2 flex items-center overflow-x-auto custom-scrollbar z-[250] shadow-sm">
-              <ul className="highcharts-stocktools-toolbar flex items-center gap-2 m-0 p-0 list-none">
-                {[
-                  { id: 'indicators', title: 'Indicators', icon: Activity },
-                  { id: 'segment', title: 'Segment', icon: Minus },
-                  { id: 'arrow', title: 'Arrow', icon: ArrowRight },
-                  { id: 'line', title: 'Line', icon: TrendingUp },
-                  { id: 'horizontal-line', title: 'Horizontal Line', icon: MoveHorizontal },
-                  { id: 'vertical-line', title: 'Vertical Line', icon: MoveVertical },
-                  { id: 'rectangle', title: 'Rectangle', icon: Square },
-                  { id: 'circle', title: 'Circle', icon: Circle },
-                  { id: 'label', title: 'Label', icon: Type },
-                  { id: 'measure-x', title: 'Measure X', icon: Ruler },
-                  { id: 'measure-xy', title: 'Measure XY', icon: Maximize },
-                  { id: 'fibonacci', title: 'Fibonacci', icon: AlignJustify },
-                  { id: 'pitchfork', title: 'Pitchfork', icon: GitBranch },
-                  { id: 'parallel-channel', title: 'Parallel Channel', icon: Equal },
-                  { id: 'toggle-annotations', title: 'Toggle Annotations', icon: EyeOff },
-                  { id: 'custom-clear', title: 'Clear Drawings', icon: Trash2, action: () => setClearLinesSignal(Date.now()) },
-                  { id: 'custom-save', title: 'Save Chart', icon: Save, action: () => setSaveChartSignal(Date.now()) }
-                ].map(tool => {
-                  const Icon = tool.icon;
-                  return (
-                    <li 
-                      key={tool.id} 
-                      onClick={tool.action}
-                      className={`${tool.id.startsWith('custom-') ? '' : `highcharts-${tool.id}`} w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 cursor-pointer transition-all shrink-0 [&.highcharts-active]:bg-gray-200 [&.highcharts-active]:text-gray-900 [&.highcharts-active]:shadow-inner`}
-                      title={tool.title}
-                    >
-                      <span className="highcharts-menu-item-btn w-full h-full flex items-center justify-center pointer-events-none">
-                        <Icon size={18} strokeWidth={2} />
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-
-            {/* Chart Container */}
-            <div className="flex-1 w-full h-full relative min-h-0 bg-white">
-              <TerminalChart 
-                key={stockData.info.ticker} 
-                ticker={stockData.info.ticker} 
-                data={stockData.history} 
-                isModal={true} 
-                onTimeframeChange={handleTimeframeChange} 
-                activeTimeframe={currentTimeframe} 
-                activeTool={activeTool} 
-                clearLinesSignal={clearLinesSignal} 
-                saveChartSignal={saveChartSignal}
-              />
+              {/* Chart Container */}
+              <div className="flex-1 w-full h-full relative min-h-0 bg-white">
+                <TerminalChart 
+                  key={stockData.info.ticker} 
+                  ticker={stockData.info.ticker} 
+                  data={stockData.history} 
+                  isModal={true} 
+                  onTimeframeChange={handleTimeframeChange} 
+                  activeTimeframe={currentTimeframe as '15m' | '1D'} 
+                  activeTool={activeTool} 
+                  clearLinesSignal={clearLinesSignal} 
+                  saveChartSignal={saveChartSignal}
+                />
+              </div>
             </div>
           </motion.div>
         )}
@@ -1684,14 +1687,18 @@ const App: React.FC = () => {
                     <span className="text-xs font-medium tracking-widest uppercase">Loading Market Data...</span>
                   </div>
                 ) : dailyHistory ? (
-                  <TerminalChart ticker={stockData.info.ticker} data={dailyHistory.slice(-20)} isModal={false} />
+                  <TerminalChart 
+                    ticker={stockData.info.ticker} 
+                    data={dailyHistory} 
+                    isModal={false} 
+                    onExpand={() => setIsChartModalOpen(true)}
+                  />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-white/30 gap-3">
                     <Activity size={48} strokeWidth={1} />
                     <span className="text-xs font-medium tracking-widest uppercase">Select a stock to view chart</span>
                   </div>
                 )}
-                <button onClick={() => setIsChartModalOpen(true)} className="absolute top-3 right-3 z-10 p-2.5 bg-black/60 rounded-lg border border-white/10 backdrop-blur-md text-white/60 hover:text-white hover:bg-pink-600 transition-all opacity-0 group-hover:opacity-100"><Expand size={14} /></button>
               </div>
                 <div className="lg:col-span-1"><PriceActionTable data={stockData.dailyAction} /></div>
               </div>

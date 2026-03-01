@@ -291,10 +291,10 @@ const generateMockStockData = (ticker: string, range: string = '1y', interval: s
   
   if (interval === '5m') {
     intervalSeconds = 300;
-    points = 78; // 1 day of 5m candles (approx 6.5 hours)
+    points = 2000; // ~15 days of 5m candles
   } else if (interval === '15m') {
     intervalSeconds = 900;
-    points = 100; // ~3 days
+    points = 2000; // ~30 days of 15m candles
   } else if (interval === '1wk') {
     intervalSeconds = 604800;
     points = 104; // 2 years

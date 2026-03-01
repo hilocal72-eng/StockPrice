@@ -177,6 +177,46 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
       }
     };
 
+    const handleTouchStart = (e: TouchEvent) => {
+      if (!interactive || !seriesRef.current || activeToolRef.current) return;
+      if (e.touches.length !== 1) return;
+      
+      const rect = chartContainerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      const touch = e.touches[0];
+      const y = touch.clientY - rect.top;
+      const price = seriesRef.current.coordinateToPrice(y);
+      if (price === null) return;
+
+      let nearestIdx = -1;
+      let minDiff = Infinity;
+      const tolerance = 40; // Much larger tolerance for touch
+      
+      drawingsRef.current.forEach((d, idx) => {
+        if (d.type === 'hline') {
+          const lineY = seriesRef.current!.priceToCoordinate(d.price);
+          if (lineY !== null) {
+            const diff = Math.abs(lineY - y);
+            if (diff < tolerance && diff < minDiff) {
+              minDiff = diff;
+              nearestIdx = idx;
+            }
+          }
+        }
+      });
+
+      if (nearestIdx !== -1) {
+        const lineObj = drawingObjectsRef.current.find(obj => obj.type === 'hline' && obj.index === nearestIdx);
+        if (lineObj) {
+          draggingLineRef.current = { index: nearestIdx, line: lineObj.line };
+          isDraggingRef.current = true;
+          chart.applyOptions({ handleScroll: false, handleScale: false });
+          if (e.cancelable) e.preventDefault();
+        }
+      }
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingRef.current && draggingLineRef.current && seriesRef.current) {
         const rect = chartContainerRef.current?.getBoundingClientRect();
@@ -185,6 +225,20 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
         const price = seriesRef.current.coordinateToPrice(y);
         if (price !== null) {
           draggingLineRef.current.line.applyOptions({ price });
+        }
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isDraggingRef.current && draggingLineRef.current && seriesRef.current && e.touches.length === 1) {
+        const rect = chartContainerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const touch = e.touches[0];
+        const y = touch.clientY - rect.top;
+        const price = seriesRef.current.coordinateToPrice(y);
+        if (price !== null) {
+          draggingLineRef.current.line.applyOptions({ price });
+          if (e.cancelable) e.preventDefault();
         }
       }
     };
@@ -212,8 +266,11 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
     const container = chartContainerRef.current;
     if (container) {
       container.addEventListener('mousedown', handleMouseDown);
+      container.addEventListener('touchstart', handleTouchStart, { passive: false });
       window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
       window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchend', handleMouseUp);
     }
 
     window.addEventListener('resize', handleResize);
@@ -222,9 +279,12 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
       window.removeEventListener('resize', handleResize);
       if (container) {
         container.removeEventListener('mousedown', handleMouseDown);
+        container.removeEventListener('touchstart', handleTouchStart);
       }
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchend', handleMouseUp);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -278,7 +338,7 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
     // Clear existing drawing objects
     drawingObjectsRef.current.forEach(obj => {
       if (obj.type === 'hline') series.removePriceLine(obj.line);
-      if (obj.type === 'segment') chart.removeSeries(obj.series);
+      if (obj.type === 'segment' || obj.type === 'handle') chart.removeSeries(obj.series);
     });
     drawingObjectsRef.current = [];
 
@@ -293,6 +353,25 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
           axisLabelVisible: true,
         });
         drawingObjectsRef.current.push({ type: 'hline', line, index: idx });
+
+        // Add a handle (circle) using a hidden line series
+        if (formattedData.length > 0) {
+          const handleSeries = chart.addLineSeries({
+            color: 'transparent',
+            lastValueVisible: false,
+            priceLineVisible: false,
+          });
+          const lastTime = formattedData[formattedData.length - 1].time;
+          handleSeries.setData([{ time: lastTime, value: d.price }]);
+          handleSeries.setMarkers([{
+            time: lastTime,
+            position: 'inBar',
+            color: '#db2777',
+            shape: 'circle',
+            size: 0.6,
+          }]);
+          drawingObjectsRef.current.push({ type: 'handle', series: handleSeries, index: idx });
+        }
       } else if (d.type === 'segment') {
         const lineSeries = chart.addLineSeries({
           color: '#db2777',
@@ -305,7 +384,7 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
         drawingObjectsRef.current.push({ type: 'segment', series: lineSeries, index: idx });
       }
     });
-  }, [drawings]); // Re-run whenever drawings state changes
+  }, [drawings, formattedData]); // Re-run whenever drawings state changes or data changes
 
   // Handle Drawing Creation
   useEffect(() => {

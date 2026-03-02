@@ -14,6 +14,36 @@ type Bindings = {
 const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
 
 // Yahoo Finance Session Management (Crumb/Cookie)
+const chartCache = new Map<string, { data: any, expiry: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+async function fetchWithRetry(url: string, options: any, retries = 2, backoff = 1000): Promise<Response> {
+  for (let i = 0; i <= retries; i++) {
+    const response = await fetch(url, options);
+    if (response.status === 429 && i < retries) {
+      await new Promise(resolve => setTimeout(resolve, backoff * Math.pow(2, i)));
+      continue;
+    }
+    return response;
+  }
+  return fetch(url, options); // Final attempt
+}
+
+async function fetchYahooPrice(ticker: string) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta) return null;
+    return {
+      price: meta.regularMarketPrice,
+      open: meta.regularMarketOpen || meta.previousClose
+    };
+  } catch (e) { return null; }
+}
+
 let yahooSession: { cookie: string; crumb: string } | null = null;
 
 async function getYahooSession() {
@@ -86,17 +116,35 @@ app.get('/screener', async (c) => {
   if (!symbolsParam) {
     return c.json({ error: 'Missing symbols parameter' }, 400);
   }
+
+  const cacheKey = `screener_${symbolsParam}`;
+  const cached = chartCache.get(cacheKey);
+  if (cached && cached.expiry > Date.now()) {
+    return c.json(cached.data);
+  }
   
   try {
     const session = await getYahooSession();
     if (!session) {
-      const quotes = await yahooFinance.quote(symbolsParam.split(','));
-      return c.json({ quotes });
+      // Fallback to chart-based fetch if session fails
+      const symbols = symbolsParam.split(',');
+      const quotes = await Promise.all(symbols.map(async (s) => {
+        const result = await fetchYahooPrice(s);
+        return { 
+          symbol: s, 
+          regularMarketPrice: result?.price || 0, 
+          regularMarketOpen: result?.open || result?.price || 0,
+          shortName: s
+        }; 
+      }));
+      const data = { quotes };
+      chartCache.set(cacheKey, { data, expiry: Date.now() + 60000 }); // 1 min cache for screener
+      return c.json(data);
     }
 
     const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolsParam)}&crumb=${encodeURIComponent(session.crumb)}`;
     
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: {
         "Cookie": session.cookie,
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -109,7 +157,9 @@ app.get('/screener', async (c) => {
     }
 
     const data = await response.json() as any;
-    return c.json({ quotes: data.quoteResponse.result });
+    const result = { quotes: data.quoteResponse.result };
+    chartCache.set(cacheKey, { data: result, expiry: Date.now() + 60000 });
+    return c.json(result);
   } catch (err) {
     console.error('Screener error:', err);
     return c.json({ error: 'Failed to fetch quotes' }, 500);
@@ -126,28 +176,44 @@ app.get('/chart', async (c) => {
     return c.json({ error: 'Missing symbol parameter' }, 400);
   }
 
+  const cacheKey = `chart_${symbol}_${interval}_${range}`;
+  const cached = chartCache.get(cacheKey);
+  if (cached && cached.expiry > Date.now()) {
+    return c.json(cached.data);
+  }
+
   try {
     const session = await getYahooSession();
-    if (!session) {
-      const chart = await yahooFinance.chart(symbol, { interval: interval as any, range: range as any });
-      return c.json({ chart: { result: [chart] } });
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    };
+    
+    let url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+    
+    if (session) {
+      url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&crumb=${encodeURIComponent(session.crumb)}`;
+      (headers as any)["Cookie"] = session.cookie;
     }
 
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&crumb=${encodeURIComponent(session.crumb)}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        "Cookie": session.cookie,
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      }
-    });
+    const response = await fetchWithRetry(url, { headers });
 
     if (!response.ok) {
       if (response.status === 401) yahooSession = null;
+      if (response.status === 429) {
+        // If we hit 429 even after retries, try query1 without session as last resort
+        const fallbackUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+        const fallbackRes = await fetch(fallbackUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+        if (fallbackRes.ok) {
+          const data = await fallbackRes.json();
+          chartCache.set(cacheKey, { data, expiry: Date.now() + CACHE_DURATION });
+          return c.json(data);
+        }
+      }
       throw new Error(`Yahoo Chart API error: ${response.status}`);
     }
 
     const data = await response.json();
+    chartCache.set(cacheKey, { data, expiry: Date.now() + CACHE_DURATION });
     return c.json(data);
   } catch (err) {
     console.error('Chart error:', err);
@@ -162,21 +228,26 @@ app.get('/search', async (c) => {
     return c.json({ error: 'Missing q parameter' }, 400);
   }
 
+  const cacheKey = `search_${query}`;
+  const cached = chartCache.get(cacheKey);
+  if (cached && cached.expiry > Date.now()) {
+    return c.json(cached.data);
+  }
+
   try {
     const session = await getYahooSession();
-    if (!session) {
-      const searchResult = await yahooFinance.search(query);
-      return c.json(searchResult);
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    };
+    
+    let url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=20&newsCount=0`;
+    
+    if (session) {
+      url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=20&newsCount=0&crumb=${encodeURIComponent(session.crumb)}`;
+      (headers as any)["Cookie"] = session.cookie;
     }
 
-    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=20&newsCount=0&crumb=${encodeURIComponent(session.crumb)}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        "Cookie": session.cookie,
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      }
-    });
+    const response = await fetchWithRetry(url, { headers });
 
     if (!response.ok) {
       if (response.status === 401) yahooSession = null;
@@ -184,6 +255,7 @@ app.get('/search', async (c) => {
     }
 
     const data = await response.json();
+    chartCache.set(cacheKey, { data, expiry: Date.now() + CACHE_DURATION });
     return c.json(data);
   } catch (err) {
     console.error('Search error:', err);

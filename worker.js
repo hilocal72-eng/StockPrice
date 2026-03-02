@@ -5,6 +5,21 @@
  * Includes detailed logging for debugging WebPush handshake issues.
  */
 
+const workerCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function fetchWithRetry(url, options, retries = 2, backoff = 1000) {
+  for (let i = 0; i <= retries; i++) {
+    const response = await fetch(url, options);
+    if (response.status === 429 && i < retries) {
+      await new Promise(resolve => setTimeout(resolve, backoff * Math.pow(2, i)));
+      continue;
+    }
+    return response;
+  }
+  return fetch(url, options);
+}
+
 export default {
   /**
    * @param {Request} request
@@ -31,6 +46,100 @@ export default {
 
     try {
       if (path === '/health') return Response.json({ status: "ok" }, { headers: corsHeaders });
+
+      // Yahoo Finance Routes
+      if (path === '/api/screener') {
+        const symbolsParam = url.searchParams.get('symbols');
+        if (!symbolsParam) return Response.json({ error: "Missing symbols" }, { status: 400, headers: corsHeaders });
+        
+        const cacheKey = `screener_${symbolsParam}`;
+        const cached = workerCache.get(cacheKey);
+        if (cached && cached.expiry > Date.now()) {
+          return Response.json(cached.data, { headers: corsHeaders });
+        }
+
+        const session = await getYahooSession();
+        let data;
+        if (session) {
+          const yfUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolsParam)}&crumb=${encodeURIComponent(session.crumb)}`;
+          const response = await fetchWithRetry(yfUrl, {
+            headers: {
+              "Cookie": session.cookie,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          });
+          if (response.ok) {
+            const json = await response.json();
+            data = { quotes: json.quoteResponse.result };
+          }
+        }
+        
+        if (!data) {
+          // Fallback to simpler chart-based fetch if session fails
+          const symbols = symbolsParam.split(',');
+          const quotes = await Promise.all(symbols.map(async (s) => {
+            const result = await fetchYahooPrice(s);
+            return { 
+              symbol: s, 
+              regularMarketPrice: result?.price || 0, 
+              regularMarketOpen: result?.open || result?.price || 0 
+            }; 
+          }));
+          data = { quotes };
+        }
+        workerCache.set(cacheKey, { data, expiry: Date.now() + 60000 });
+        return Response.json(data, { headers: corsHeaders });
+      }
+
+      if (path === '/api/chart') {
+        const symbol = url.searchParams.get('symbol');
+        const interval = url.searchParams.get('interval') || '1d';
+        const range = url.searchParams.get('range') || '1y';
+        if (!symbol) return Response.json({ error: "Missing symbol" }, { status: 400, headers: corsHeaders });
+
+        const cacheKey = `chart_${symbol}_${interval}_${range}`;
+        const cached = workerCache.get(cacheKey);
+        if (cached && cached.expiry > Date.now()) {
+          return Response.json(cached.data, { headers: corsHeaders });
+        }
+
+        const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+        const response = await fetchWithRetry(yfUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          workerCache.set(cacheKey, { data, expiry: Date.now() + CACHE_TTL });
+          return Response.json(data, { headers: corsHeaders });
+        }
+        
+        return Response.json({ error: `Yahoo Chart API error: ${response.status}` }, { status: response.status, headers: corsHeaders });
+      }
+
+      if (path === '/api/search') {
+        const query = url.searchParams.get('q');
+        if (!query) return Response.json({ error: "Missing q" }, { status: 400, headers: corsHeaders });
+
+        const cacheKey = `search_${query}`;
+        const cached = workerCache.get(cacheKey);
+        if (cached && cached.expiry > Date.now()) {
+          return Response.json(cached.data, { headers: corsHeaders });
+        }
+
+        const yfUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=20&newsCount=0`;
+        const response = await fetchWithRetry(yfUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          workerCache.set(cacheKey, { data, expiry: Date.now() + CACHE_TTL });
+          return Response.json(data, { headers: corsHeaders });
+        }
+        
+        return Response.json({ error: `Yahoo Search API error: ${response.status}` }, { status: response.status, headers: corsHeaders });
+      }
 
       // CRUD Operations for Alerts
       if ((path === '' || path === '/') && request.method === 'GET') {
@@ -97,10 +206,10 @@ export default {
     const priceMap = {};
     
     await Promise.all(uniqueTickers.map(async (ticker) => {
-      const price = await fetchYahooPrice(ticker);
-      if (price !== null) {
-        priceMap[ticker] = price;
-        console.log(`[Scheduled] Fetched price for ${ticker}: ${price}`);
+      const result = await fetchYahooPrice(ticker);
+      if (result && result.price !== null) {
+        priceMap[ticker] = result.price;
+        console.log(`[Scheduled] Fetched price for ${ticker}: ${result.price}`);
       } else {
         console.warn(`[Scheduled] Failed to fetch price for ${ticker}`);
       }
@@ -137,11 +246,37 @@ export default {
 
 async function fetchYahooPrice(ticker) {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
     const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!res.ok) return null;
     const data = await res.json();
-    return data?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta) return null;
+    return {
+      price: meta.regularMarketPrice,
+      open: meta.regularMarketOpen || meta.previousClose
+    };
+  } catch (e) { return null; }
+}
+
+let yahooSession = null;
+async function getYahooSession() {
+  if (yahooSession) return yahooSession;
+  try {
+    const fcResponse = await fetch("https://fc.yahoo.com", {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
+    const cookie = fcResponse.headers.get("set-cookie");
+    if (!cookie) return null;
+
+    const crumbResponse = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+      headers: { "Cookie": cookie, "User-Agent": "Mozilla/5.0" }
+    });
+    const crumb = await crumbResponse.text();
+    if (!crumb || crumb.includes("error")) return null;
+
+    yahooSession = { cookie, crumb };
+    return yahooSession;
   } catch (e) { return null; }
 }
 

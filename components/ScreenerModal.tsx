@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search, Activity, ChevronDown, TrendingUp, Loader2, ArrowUpRight, ArrowDownRight, CandlestickChart } from 'lucide-react';
+import { X, Search, Activity, ChevronDown, TrendingUp, Loader2, ArrowUpRight, ArrowDownRight, CandlestickChart, Info } from 'lucide-react';
 import { runScreener, INDICES, ScreenerResult, TradeType } from '../services/mockStockData.ts';
 
 interface ScreenerModalProps {
@@ -17,6 +17,7 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
   const [direction, setDirection] = useState<'above' | 'below'>('above');
   const [isScanning, setIsScanning] = useState(false);
   const [results, setResults] = useState<ScreenerResult[] | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const handleScan = async () => {
     setIsScanning(true);
@@ -61,7 +62,15 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
                 <CandlestickChart size={18} strokeWidth={2.5} />
               </div>
               <div className="flex flex-col">
-                <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-widest leading-none">Stock Hunt</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-widest leading-none">Stock Hunt</h2>
+                  <button 
+                    onClick={() => setShowInfo(!showInfo)}
+                    className="text-white/40 hover:text-pink-400 transition-colors"
+                  >
+                    <Info size={14} />
+                  </button>
+                </div>
                 <span className="text-[9px] sm:text-[10px] font-bold text-white/50 uppercase tracking-[0.2em] mt-1">Gap & Go Strategy</span>
               </div>
             </div>
@@ -247,6 +256,46 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
             )}
           </div>
         </motion.div>
+
+        {/* Info Modal Overlay */}
+        <AnimatePresence>
+          {showInfo && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowInfo(false)}
+                className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="relative w-full max-w-sm glossy-card !bg-black/90 !border-white/20 rounded-2xl overflow-hidden shadow-2xl p-5"
+              >
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-pink-500/10 text-pink-500 rounded-lg border border-pink-500/20">
+                      <Info size={16} />
+                    </div>
+                    <h3 className="text-xs font-black text-white uppercase tracking-widest">Trade Types</h3>
+                  </div>
+                  <button onClick={() => setShowInfo(false)} className="text-white/40 hover:text-white transition-colors">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="text-[10px] sm:text-xs text-white/70 leading-relaxed font-medium">
+                  <ul className="space-y-3 list-disc pl-4 marker:text-pink-500">
+                    <li><strong className="text-white">Intraday:</strong> Focuses on momentum since the market opened (Change from Open).</li>
+                    <li><strong className="text-white">Investment:</strong> Focuses on the total daily performance (Change from Yesterday's Close).</li>
+                    <li><strong className="text-white">Hybrid:</strong> A professional-grade filter that combines both. It looks for stocks moving within your % range from the Open, while also ensuring they are trending in the same direction relative to yesterday's close (Bullish/Bearish confirmation).</li>
+                  </ul>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </AnimatePresence>
   );

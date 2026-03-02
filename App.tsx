@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import OneSignal from 'react-onesignal';
-import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield, AlertCircle, ChevronDown, ArrowRight, MoveHorizontal, MoveVertical, Square, Circle, Type, Ruler, Maximize, AlignJustify, GitBranch, Equal, EyeOff, Save } from 'lucide-react';
+import { TrendingUp, Activity, Loader2, X, Heart, ArrowUpRight, ArrowDownRight, Search, LayoutDashboard, Flame, Snowflake, Meh, ShieldCheck, Zap, Info, Globe, Cpu, Clock, Calendar, Expand, Minus, Timer, CalendarDays, SeparatorHorizontal, Trash2, Milestone, BellRing, ChevronRight, TrendingDown, CheckCircle2, ShieldAlert, Sparkles, Wand2, RefreshCw, AlertTriangle, BellOff, Smartphone, Briefcase, Plus, Coins, BarChart4, Settings, Check, ZapOff, Shield, AlertCircle, ChevronDown, ArrowRight, MoveHorizontal, MoveVertical, Square, Circle, Type, Ruler, Maximize, AlignJustify, GitBranch, Equal, EyeOff, Save, CandlestickChart } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchStockData, searchStocks } from './services/mockStockData.ts';
 import { StockDetails, SentimentAnalysis, DayAction, SearchResult, PricePoint, Alert, PortfolioItem, TradingMode, ZerodhaHolding, ZerodhaPosition, ZerodhaProfile } from './types.ts';
@@ -1708,8 +1708,8 @@ const App: React.FC = () => {
                     onClick={() => setIsScreenerModalOpen(true)}
                     className="w-full py-3.5 bg-pink-600 hover:bg-pink-500 rounded-xl flex items-center justify-center gap-2 text-white transition-all shadow-[0_0_20px_rgba(236,72,153,0.3)] border border-pink-400/50 relative z-10"
                   >
-                    <Search size={16} className="text-white" />
-                    <span className="text-[11px] font-black uppercase tracking-widest">Open Screener</span>
+                    <CandlestickChart size={16} className="text-white" />
+                    <span className="text-[11px] font-black uppercase tracking-widest">Stock Hunt</span>
                   </button>
                 </div>
               </div>

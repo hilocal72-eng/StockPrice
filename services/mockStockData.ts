@@ -141,10 +141,19 @@ export interface ScreenerResult {
   name: string;
   currentPrice: number;
   changePercentFromOpen: number;
+  changePercentFromClose: number;
   volume: number;
 }
 
-export const runScreener = async (indexName: keyof typeof INDICES, minPct: number, maxPct: number, direction: 'above' | 'below' = 'above'): Promise<ScreenerResult[]> => {
+export type TradeType = 'intraday' | 'investment' | 'hybrid';
+
+export const runScreener = async (
+  indexName: keyof typeof INDICES, 
+  minPct: number, 
+  maxPct: number, 
+  direction: 'above' | 'below' = 'above',
+  tradeType: TradeType = 'intraday'
+): Promise<ScreenerResult[]> => {
   try {
     const symbols = INDICES[indexName];
     if (!symbols) return [];
@@ -164,15 +173,37 @@ export const runScreener = async (indexName: keyof typeof INDICES, minPct: numbe
     quotesArray.forEach((quote: any) => {
       const currentPrice = quote.regularMarketPrice;
       const openPrice = quote.regularMarketOpen || quote.regularMarketPreviousClose;
+      const prevClose = quote.regularMarketPreviousClose || openPrice;
       
       if (currentPrice && openPrice) {
         const changeFromOpen = ((currentPrice - openPrice) / openPrice) * 100;
+        const changeFromClose = ((currentPrice - prevClose) / prevClose) * 100;
         
         let isMatch = false;
-        if (direction === 'above') {
-          isMatch = changeFromOpen >= minPct && changeFromOpen <= maxPct;
-        } else {
-          isMatch = changeFromOpen <= -minPct && changeFromOpen >= -maxPct;
+        
+        if (tradeType === 'intraday') {
+          if (direction === 'above') {
+            isMatch = changeFromOpen >= minPct && changeFromOpen <= maxPct;
+          } else {
+            isMatch = changeFromOpen <= -minPct && changeFromOpen >= -maxPct;
+          }
+        } else if (tradeType === 'investment') {
+          if (direction === 'above') {
+            isMatch = changeFromClose >= minPct && changeFromClose <= maxPct;
+          } else {
+            isMatch = changeFromClose <= -minPct && changeFromClose >= -maxPct;
+          }
+        } else if (tradeType === 'hybrid') {
+          // Hybrid logic: Primary (Open) + Secondary (Close)
+          if (direction === 'above') {
+            const primaryMatch = changeFromOpen >= minPct && changeFromOpen <= maxPct;
+            const secondaryMatch = changeFromClose > 0;
+            isMatch = primaryMatch && secondaryMatch;
+          } else {
+            const primaryMatch = changeFromOpen <= -minPct && changeFromOpen >= -maxPct;
+            const secondaryMatch = changeFromClose < 0;
+            isMatch = primaryMatch && secondaryMatch;
+          }
         }
         
         if (isMatch) {
@@ -181,18 +212,26 @@ export const runScreener = async (indexName: keyof typeof INDICES, minPct: numbe
             name: quote.shortName || quote.longName || quote.symbol,
             currentPrice: currentPrice,
             changePercentFromOpen: changeFromOpen,
+            changePercentFromClose: changeFromClose,
             volume: quote.regularMarketVolume || 0
           });
         }
       }
     });
 
-    // Sort by highest percentage change from open
-    if (direction === 'above') {
-      return results.sort((a, b) => b.changePercentFromOpen - a.changePercentFromOpen).slice(0, 10);
-    } else {
-      return results.sort((a, b) => a.changePercentFromOpen - b.changePercentFromOpen).slice(0, 10);
-    }
+    // Sort by the primary metric based on trade type
+    const sortFn = (a: ScreenerResult, b: ScreenerResult) => {
+      const valA = tradeType === 'investment' ? a.changePercentFromClose : a.changePercentFromOpen;
+      const valB = tradeType === 'investment' ? b.changePercentFromClose : b.changePercentFromOpen;
+      
+      if (direction === 'above') {
+        return valB - valA;
+      } else {
+        return valA - valB;
+      }
+    };
+
+    return results.sort(sortFn).slice(0, 10);
   } catch (e) {
     console.error('Screener error:', e);
     return [];

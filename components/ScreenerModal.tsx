@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search, Activity, ChevronDown, TrendingUp, Loader2, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { runScreener, INDICES, ScreenerResult } from '../services/mockStockData.ts';
+import { X, Search, Activity, ChevronDown, TrendingUp, Loader2, ArrowUpRight, ArrowDownRight, CandlestickChart } from 'lucide-react';
+import { runScreener, INDICES, ScreenerResult, TradeType } from '../services/mockStockData.ts';
 
 interface ScreenerModalProps {
   isOpen: boolean;
@@ -11,6 +11,7 @@ interface ScreenerModalProps {
 
 const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelectStock }) => {
   const [selectedIndex, setSelectedIndex] = useState<keyof typeof INDICES>('NIFTY 50');
+  const [tradeType, setTradeType] = useState<TradeType>('intraday');
   const [minPct, setMinPct] = useState<string>('0.5');
   const [maxPct, setMaxPct] = useState<string>('5.0');
   const [direction, setDirection] = useState<'above' | 'below'>('above');
@@ -29,7 +30,7 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
       return;
     }
 
-    const data = await runScreener(selectedIndex, min, max, direction);
+    const data = await runScreener(selectedIndex, min, max, direction, tradeType);
     setResults(data);
     setIsScanning(false);
   };
@@ -57,10 +58,10 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
           <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-white/[0.02]">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-pink-500/10 text-pink-500 border border-pink-500/20 shadow-[0_0_15px_rgba(236,72,153,0.15)]">
-                <Search size={18} strokeWidth={2.5} />
+                <CandlestickChart size={18} strokeWidth={2.5} />
               </div>
               <div className="flex flex-col">
-                <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-widest leading-none">Market Screener</h2>
+                <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-widest leading-none">Stock Hunt</h2>
                 <span className="text-[9px] sm:text-[10px] font-bold text-white/50 uppercase tracking-[0.2em] mt-1">Gap & Go Strategy</span>
               </div>
             </div>
@@ -90,7 +91,7 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="w-full sm:w-1/3 flex flex-col gap-1.5">
+              <div className="w-full sm:w-1/4 flex flex-col gap-1.5">
                 <label className="text-[9px] font-black text-white/60 uppercase tracking-widest">Index</label>
                 <div className="relative">
                   <select 
@@ -106,7 +107,23 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
                 </div>
               </div>
 
-              <div className="w-full sm:w-1/3 flex gap-3">
+              <div className="w-full sm:w-1/4 flex flex-col gap-1.5">
+                <label className="text-[9px] font-black text-white/60 uppercase tracking-widest">Trade Type</label>
+                <div className="relative">
+                  <select 
+                    value={tradeType}
+                    onChange={(e) => setTradeType(e.target.value as TradeType)}
+                    className="w-full appearance-none bg-white/5 border border-white/20 rounded-lg py-2.5 pl-3 pr-8 text-xs font-bold text-white focus:outline-none focus:border-pink-500/50 transition-colors"
+                  >
+                    <option value="intraday" className="bg-gray-900">Intraday</option>
+                    <option value="investment" className="bg-gray-900">Investment</option>
+                    <option value="hybrid" className="bg-gray-900">Hybrid</option>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                </div>
+              </div>
+
+              <div className="w-full sm:w-1/4 flex gap-3">
                 <div className="flex-1 flex flex-col gap-1.5">
                   <label className="text-[9px] font-black text-white/60 uppercase tracking-widest">Min %</label>
                   <div className="relative">
@@ -138,7 +155,7 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
               <button 
                 onClick={handleScan}
                 disabled={isScanning}
-                className="w-full sm:w-1/3 py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg border border-white/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:w-1/4 py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg border border-white/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isScanning ? (
                   <>
@@ -183,43 +200,48 @@ const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelect
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-2 pb-2 border-b border-white/10">
                   <span className="text-[9px] font-black text-white/50 uppercase tracking-widest">Top {results.length} Results</span>
-                  <span className="text-[9px] font-black text-white/50 uppercase tracking-widest">Change from Open</span>
+                  <span className="text-[9px] font-black text-white/50 uppercase tracking-widest">
+                    {tradeType === 'investment' ? 'Change from Close' : 'Change from Open'}
+                  </span>
                 </div>
                 <div className="grid gap-2">
-                  {results.map((stock, idx) => (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.05 }}
-                      key={stock.symbol}
-                      onClick={() => {
-                        onSelectStock(stock.symbol);
-                        onClose();
-                      }}
-                      className="group flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-pink-500/30 cursor-pointer transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-md bg-black/40 border border-white/10 flex items-center justify-center text-[9px] font-black text-white/40 group-hover:text-pink-500 group-hover:border-pink-500/30 transition-colors">
-                          {idx + 1}
+                  {results.map((stock, idx) => {
+                    const displayChange = tradeType === 'investment' ? stock.changePercentFromClose : stock.changePercentFromOpen;
+                    return (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        key={stock.symbol}
+                        onClick={() => {
+                          onSelectStock(stock.symbol);
+                          onClose();
+                        }}
+                        className="group flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-pink-500/30 cursor-pointer transition-all"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-6 h-6 rounded-md bg-black/40 border border-white/10 flex items-center justify-center text-[9px] font-black text-white/40 group-hover:text-pink-500 group-hover:border-pink-500/30 transition-colors">
+                            {idx + 1}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-black text-white uppercase tracking-tight group-hover:text-pink-400 transition-colors">{stock.symbol}</span>
+                            <span className="text-[9px] font-bold text-white/40 truncate max-w-[120px] sm:max-w-[200px]">{stock.name}</span>
+                          </div>
                         </div>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-black text-white uppercase tracking-tight group-hover:text-pink-400 transition-colors">{stock.symbol}</span>
-                          <span className="text-[9px] font-bold text-white/40 truncate max-w-[120px] sm:max-w-[200px]">{stock.name}</span>
+                        
+                        <div className="flex items-center gap-4">
+                          <div className="flex flex-col items-end">
+                            <span className="text-xs font-black text-white tabular-nums">{stock.currentPrice.toFixed(2)}</span>
+                            <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest">CMP</span>
+                          </div>
+                          <div className={`px-2 py-1 rounded-md border flex items-center gap-1 ${displayChange >= 0 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-rose-500/10 border-rose-500/30 text-rose-400'}`}>
+                            <TrendingUp size={10} className={displayChange < 0 ? 'rotate-180' : ''} />
+                            <span className="text-[10px] font-black tabular-nums">{Math.abs(displayChange).toFixed(2)}%</span>
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-4">
-                        <div className="flex flex-col items-end">
-                          <span className="text-xs font-black text-white tabular-nums">{stock.currentPrice.toFixed(2)}</span>
-                          <span className="text-[8px] font-bold text-white/40 uppercase tracking-widest">CMP</span>
-                        </div>
-                        <div className={`px-2 py-1 rounded-md border flex items-center gap-1 ${stock.changePercentFromOpen >= 0 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-rose-500/10 border-rose-500/30 text-rose-400'}`}>
-                          <TrendingUp size={10} className={stock.changePercentFromOpen < 0 ? 'rotate-180' : ''} />
-                          <span className="text-[10px] font-black tabular-nums">{Math.abs(stock.changePercentFromOpen).toFixed(2)}%</span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
+                      </motion.div>
+                    );
+                  })}
                 </div>
               </div>
             )}

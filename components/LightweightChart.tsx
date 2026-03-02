@@ -119,6 +119,18 @@ const LightweightChart: React.FC<LightweightChartProps> = ({
         rightOffset: 10,
         barSpacing: 6,
       },
+      localization: {
+        locale: 'en-IN',
+        timeFormatter: (timestamp: number) => {
+          const date = new Date(timestamp * 1000);
+          return date.toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+        },
+      },
       handleScroll: { mouseWheel: interactive, pressedMouseMove: interactive },
       handleScale: { axisPressedMouseMove: interactive, mouseWheel: interactive, pinch: interactive },
     });

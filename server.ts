@@ -4,6 +4,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
 import fs from "fs";
+import yahooFinance from "yahoo-finance2";
+import { createServer as createViteServer } from "vite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -185,6 +187,22 @@ async function startServer() {
     } catch (err) {
       console.error("Proxy error:", err);
       res.status(500).json({ error: "Failed to fetch data" });
+    }
+  });
+
+  // Screener Endpoint using yahoo-finance2
+  app.get("/api/screener", async (req, res) => {
+    const symbolsParam = req.query.symbols as string;
+    if (!symbolsParam) {
+      return res.status(400).json({ error: "Missing symbols parameter" });
+    }
+    const symbols = symbolsParam.split(',');
+    try {
+      const quotes = await yahooFinance.quote(symbols);
+      res.json({ quotes });
+    } catch (err) {
+      console.error("Screener error:", err);
+      res.status(500).json({ error: "Failed to fetch quotes" });
     }
   });
 
@@ -472,13 +490,22 @@ async function sendOneSignalPush(username: string, ticker: string, targetPrice: 
     }
   }, 30000); // Check every 30 seconds
 
-  // Serve static files from the dist directory
-  app.use(express.static(path.join(__dirname, "dist")));
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    // Serve static files from the dist directory
+    app.use(express.static(path.join(__dirname, "dist")));
 
-  // Handle SPA routing: serve index.html for all non-API routes
-  app.get(/.*/, (req, res) => {
-    res.sendFile(path.join(__dirname, "dist", "index.html"));
-  });
+    // Handle SPA routing: serve index.html for all non-API routes
+    app.get(/.*/, (req, res) => {
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
+  }
 
   // Global Error Handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

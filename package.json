@@ -29,7 +29,8 @@
     "react-dom": "^18.2.0",
     "react-onesignal": "^3.4.6",
     "tailwindcss": "^4.2.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "yahoo-finance2": "^3.13.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.66",

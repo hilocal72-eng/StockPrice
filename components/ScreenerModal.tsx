@@ -11,8 +11,8 @@ interface ScreenerModalProps {
 
 const ScreenerModal: React.FC<ScreenerModalProps> = ({ isOpen, onClose, onSelectStock }) => {
   const [selectedIndex, setSelectedIndex] = useState<keyof typeof INDICES>('NIFTY 50');
-  const [minPct, setMinPct] = useState<string>('1.0');
-  const [maxPct, setMaxPct] = useState<string>('2.0');
+  const [minPct, setMinPct] = useState<string>('0.5');
+  const [maxPct, setMaxPct] = useState<string>('5.0');
   const [direction, setDirection] = useState<'above' | 'below'>('above');
   const [isScanning, setIsScanning] = useState(false);
   const [results, setResults] = useState<ScreenerResult[] | null>(null);

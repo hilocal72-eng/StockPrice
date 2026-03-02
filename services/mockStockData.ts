@@ -157,20 +157,21 @@ export const runScreener = async (indexName: keyof typeof INDICES, minPct: numbe
     const symbols = INDICES[indexName];
     if (!symbols) return [];
 
-    const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}`;
-    const url = `/api/proxy`;
-    const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
+    const response = await fetch(`/api/screener?symbols=${symbols.join(',')}`);
     
     if (!response.ok) throw new Error('Failed to fetch quotes');
     const data = await response.json();
     
-    if (!data.quoteResponse || !data.quoteResponse.result) return [];
+    if (!data.quotes) return [];
 
     const results: ScreenerResult[] = [];
 
-    data.quoteResponse.result.forEach((quote: any) => {
+    // yahoo-finance2 returns an array of quotes
+    const quotesArray = Array.isArray(data.quotes) ? data.quotes : [data.quotes];
+
+    quotesArray.forEach((quote: any) => {
       const currentPrice = quote.regularMarketPrice;
-      const openPrice = quote.regularMarketOpen;
+      const openPrice = quote.regularMarketOpen || quote.regularMarketPreviousClose;
       
       if (currentPrice && openPrice) {
         const changeFromOpen = ((currentPrice - openPrice) / openPrice) * 100;

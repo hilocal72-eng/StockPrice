@@ -206,6 +206,48 @@ async function startServer() {
     }
   });
 
+  // Chart Endpoint using yahoo-finance2
+  app.get("/api/chart", async (req, res) => {
+    const symbol = req.query.symbol as string;
+    const interval = req.query.interval as any;
+    const range = req.query.range as any;
+    
+    if (!symbol) {
+      return res.status(400).json({ error: "Missing symbol parameter" });
+    }
+
+    try {
+      const chart = await yahooFinance.chart(symbol, {
+        interval: interval || '1d',
+        range: range || '1y'
+      });
+      res.json({ chart: { result: [chart] } });
+    } catch (err) {
+      console.error("Chart error:", err);
+      res.status(500).json({ error: "Failed to fetch chart" });
+    }
+  });
+
+  // Search Endpoint using yahoo-finance2
+  app.get("/api/search", async (req, res) => {
+    const query = req.query.q as string;
+    if (!query) {
+      return res.status(400).json({ error: "Missing q parameter" });
+    }
+
+    try {
+      const searchResult = await yahooFinance.search(query, {
+        quotesCount: 20,
+        newsCount: 0,
+        enableFuzzyQuery: true
+      });
+      res.json(searchResult);
+    } catch (err) {
+      console.error("Search error:", err);
+      res.status(500).json({ error: "Failed to fetch search results" });
+    }
+  });
+
   // Auth Endpoints
   app.post("/api/auth/register", (req, res) => {
     console.log(`STKR_LOG: Register attempt for username: ${req.body.username}`);
@@ -490,8 +532,8 @@ async function sendOneSignalPush(username: string, ticker: string, targetPrice: 
     }
   }, 30000); // Check every 30 seconds
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Vite middleware for development or if dist doesn't exist
+  if (process.env.NODE_ENV !== "production" || !fs.existsSync(path.join(__dirname, "dist", "index.html"))) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

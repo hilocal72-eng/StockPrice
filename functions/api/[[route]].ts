@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { cors } from 'hono/cors';
+import yahooFinance from 'yahoo-finance2';
 
 type Bindings = {
   DB: any;
@@ -43,6 +44,64 @@ app.get('/proxy', async (c) => {
   } catch (err) {
     console.error('Proxy error:', err);
     return c.json({ error: 'Failed to fetch data' }, 500);
+  }
+});
+
+// Screener Endpoint using yahoo-finance2
+app.get('/screener', async (c) => {
+  const symbolsParam = c.req.query('symbols');
+  if (!symbolsParam) {
+    return c.json({ error: 'Missing symbols parameter' }, 400);
+  }
+  const symbols = symbolsParam.split(',');
+  try {
+    const quotes = await yahooFinance.quote(symbols);
+    return c.json({ quotes });
+  } catch (err) {
+    console.error('Screener error:', err);
+    return c.json({ error: 'Failed to fetch quotes' }, 500);
+  }
+});
+
+// Chart Endpoint using yahoo-finance2
+app.get('/chart', async (c) => {
+  const symbol = c.req.query('symbol');
+  const interval = c.req.query('interval') as any;
+  const range = c.req.query('range') as any;
+  
+  if (!symbol) {
+    return c.json({ error: 'Missing symbol parameter' }, 400);
+  }
+
+  try {
+    const chart = await yahooFinance.chart(symbol, {
+      interval: interval || '1d',
+      range: range || '1y'
+    });
+    return c.json({ chart: { result: [chart] } });
+  } catch (err) {
+    console.error('Chart error:', err);
+    return c.json({ error: 'Failed to fetch chart' }, 500);
+  }
+});
+
+// Search Endpoint using yahoo-finance2
+app.get('/search', async (c) => {
+  const query = c.req.query('q');
+  if (!query) {
+    return c.json({ error: 'Missing q parameter' }, 400);
+  }
+
+  try {
+    const searchResult = await yahooFinance.search(query, {
+      quotesCount: 20,
+      newsCount: 0,
+      enableFuzzyQuery: true
+    });
+    return c.json(searchResult);
+  } catch (err) {
+    console.error('Search error:', err);
+    return c.json({ error: 'Failed to fetch search results' }, 500);
   }
 });
 

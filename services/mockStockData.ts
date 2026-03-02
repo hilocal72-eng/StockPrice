@@ -7,11 +7,7 @@ const CACHE_TTL = 60 * 1000; // 60 seconds
 
 const fetchYahoo = async (symbol: string, interval: string, range: string): Promise<any | null> => {
   try {
-    const cacheBuster = `&t=${Date.now()}`;
-    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}&includePrePost=false${cacheBuster}`;
-    // Use local proxy instead of Cloudflare worker
-    const url = `/api/proxy`;
-    const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
+    const response = await fetch(`/api/chart?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`);
     if (!response.ok) return null;
     const data = await response.json();
     if (!data.chart || !data.chart.result || data.chart.result.length === 0) return null;
@@ -24,11 +20,7 @@ const fetchYahoo = async (symbol: string, interval: string, range: string): Prom
 export const searchStocks = async (query: string): Promise<SearchResult[]> => {
   if (!query || query.trim().length < 1) return [];
   try {
-    // Increase quotesCount to 20 for more comprehensive results
-    const targetUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=IN&quotesCount=20&newsCount=0&listsCount=0&enableFuzzyQuery=true`;
-    
-    const url = `/api/proxy`;
-    const response = await fetch(`${url}?url=${encodeURIComponent(targetUrl)}`);
+    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     if (!response.ok) return [];
     const data = await response.json();
     

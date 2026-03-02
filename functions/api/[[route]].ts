@@ -13,6 +13,39 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
 
+// Yahoo Finance Session Management (Crumb/Cookie)
+let yahooSession: { cookie: string; crumb: string } | null = null;
+
+async function getYahooSession() {
+  if (yahooSession) return yahooSession;
+
+  try {
+    // 1. Get cookie from fc.yahoo.com
+    const fcResponse = await fetch("https://fc.yahoo.com", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    });
+    const cookie = fcResponse.headers.get("set-cookie");
+    if (!cookie) return null;
+
+    // 2. Get crumb from getcrumb
+    const crumbResponse = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+      headers: {
+        "Cookie": cookie,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    });
+    const crumb = await crumbResponse.text();
+    if (!crumb || crumb.includes("error")) return null;
+
+    yahooSession = { cookie, crumb };
+    return yahooSession;
+  } catch (err) {
+    return null;
+  }
+}
+
 // Enable CORS
 app.use('*', cors());
 
@@ -47,45 +80,82 @@ app.get('/proxy', async (c) => {
   }
 });
 
-// Screener Endpoint using yahoo-finance2
+// Screener Endpoint using manual crumb/cookie for reliability
 app.get('/screener', async (c) => {
   const symbolsParam = c.req.query('symbols');
   if (!symbolsParam) {
     return c.json({ error: 'Missing symbols parameter' }, 400);
   }
-  const symbols = symbolsParam.split(',');
+  
   try {
-    const quotes = await yahooFinance.quote(symbols);
-    return c.json({ quotes });
+    const session = await getYahooSession();
+    if (!session) {
+      const quotes = await yahooFinance.quote(symbolsParam.split(','));
+      return c.json({ quotes });
+    }
+
+    const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolsParam)}&crumb=${encodeURIComponent(session.crumb)}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        "Cookie": session.cookie,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) yahooSession = null;
+      throw new Error(`Yahoo API error: ${response.status}`);
+    }
+
+    const data = await response.json() as any;
+    return c.json({ quotes: data.quoteResponse.result });
   } catch (err) {
     console.error('Screener error:', err);
     return c.json({ error: 'Failed to fetch quotes' }, 500);
   }
 });
 
-// Chart Endpoint using yahoo-finance2
+// Chart Endpoint using manual crumb/cookie for reliability
 app.get('/chart', async (c) => {
   const symbol = c.req.query('symbol');
-  const interval = c.req.query('interval') as any;
-  const range = c.req.query('range') as any;
+  const interval = c.req.query('interval') || '1d';
+  const range = c.req.query('range') || '1y';
   
   if (!symbol) {
     return c.json({ error: 'Missing symbol parameter' }, 400);
   }
 
   try {
-    const chart = await yahooFinance.chart(symbol, {
-      interval: interval || '1d',
-      range: range || '1y'
+    const session = await getYahooSession();
+    if (!session) {
+      const chart = await yahooFinance.chart(symbol, { interval: interval as any, range: range as any });
+      return c.json({ chart: { result: [chart] } });
+    }
+
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&crumb=${encodeURIComponent(session.crumb)}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        "Cookie": session.cookie,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
     });
-    return c.json({ chart: { result: [chart] } });
+
+    if (!response.ok) {
+      if (response.status === 401) yahooSession = null;
+      throw new Error(`Yahoo Chart API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return c.json(data);
   } catch (err) {
     console.error('Chart error:', err);
     return c.json({ error: 'Failed to fetch chart' }, 500);
   }
 });
 
-// Search Endpoint using yahoo-finance2
+// Search Endpoint using manual crumb/cookie for reliability
 app.get('/search', async (c) => {
   const query = c.req.query('q');
   if (!query) {
@@ -93,12 +163,28 @@ app.get('/search', async (c) => {
   }
 
   try {
-    const searchResult = await yahooFinance.search(query, {
-      quotesCount: 20,
-      newsCount: 0,
-      enableFuzzyQuery: true
+    const session = await getYahooSession();
+    if (!session) {
+      const searchResult = await yahooFinance.search(query);
+      return c.json(searchResult);
+    }
+
+    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=20&newsCount=0&crumb=${encodeURIComponent(session.crumb)}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        "Cookie": session.cookie,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
     });
-    return c.json(searchResult);
+
+    if (!response.ok) {
+      if (response.status === 401) yahooSession = null;
+      throw new Error(`Yahoo Search API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return c.json(data);
   } catch (err) {
     console.error('Search error:', err);
     return c.json({ error: 'Failed to fetch search results' }, 500);
@@ -266,36 +352,56 @@ app.get('/cron/check', async (c) => {
       return c.json({ status: 'no active alerts' });
     }
 
+    const session = await getYahooSession();
     let triggeredCount = 0;
-    const tickers = [...new Set(alerts.results.map((a: any) => a.ticker))];
-    
-    for (const ticker of tickers) {
-      try {
-        const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
-        const response = await fetch(yfUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        const data = await response.json() as any;
-        
-        if (!data.chart || !data.chart.result || data.chart.result.length === 0) continue;
-        const currentPrice = data.chart.result[0].meta.regularMarketPrice;
+    const tickers = [...new Set((alerts.results as any[]).map((a: any) => a.ticker as string))];
+    const priceMap: Record<string, number> = {};
 
-        const tickerAlerts = alerts.results.filter((a: any) => a.ticker === ticker);
-        
-        for (const alert of tickerAlerts) {
-          let triggered = false;
-          if (alert.condition === 'above' && currentPrice >= alert.target_price) triggered = true;
-          if (alert.condition === 'below' && currentPrice <= alert.target_price) triggered = true;
-
-          if (triggered) {
-            await c.env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ?").bind(alert.id).run();
-            
-            // Send OneSignal Push using the username (external_id)
-            await sendOneSignalPush(alert.username, alert.ticker, alert.target_price, currentPrice, c.env);
-            
-            triggeredCount++;
+    try {
+      if (session) {
+        const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers.join(','))}&crumb=${encodeURIComponent(session.crumb)}`;
+        const response = await fetch(url, {
+          headers: {
+            "Cookie": session.cookie,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        });
+        if (response.ok) {
+          const data = await response.json() as any;
+          data.quoteResponse.result.forEach((q: any) => {
+            priceMap[q.symbol] = q.regularMarketPrice;
+          });
+        }
+      } else {
+        // Fallback
+        for (const ticker of tickers) {
+          const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+          const response = await fetch(yfUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          const data = await response.json() as any;
+          if (data.chart?.result?.[0]) {
+            priceMap[ticker] = data.chart.result[0].meta.regularMarketPrice;
           }
         }
-      } catch (e) {
-        console.error(`Failed to process ${ticker}:`, e);
+      }
+    } catch (e) {
+      console.error("Cron price fetch failed:", e);
+    }
+
+    for (const alert of (alerts.results as any[])) {
+      const currentPrice = priceMap[alert.ticker as string];
+      if (currentPrice === undefined) continue;
+
+      let triggered = false;
+      if (alert.condition === 'above' && currentPrice >= alert.target_price) triggered = true;
+      if (alert.condition === 'below' && currentPrice <= alert.target_price) triggered = true;
+
+      if (triggered) {
+        await c.env.DB.prepare("UPDATE alerts SET status = 'triggered' WHERE id = ?").bind(alert.id).run();
+        
+        // Send OneSignal Push using the username (external_id)
+        await sendOneSignalPush(alert.username as string, alert.ticker as string, alert.target_price as number, currentPrice, c.env);
+        
+        triggeredCount++;
       }
     }
 

@@ -90,6 +90,28 @@ async function getYahooSession() {
   }
 }
 
+async function fetchWithRetry(url: string, options: any, retries = 3, backoff = 1000): Promise<Response> {
+  let lastError: any;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.status === 429) {
+        console.warn(`STKR_LOG: 429 Too Many Requests. Retrying in ${backoff}ms... (Attempt ${i + 1}/${retries})`);
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        backoff *= 2; // Exponential backoff
+        continue;
+      }
+      return response;
+    } catch (err) {
+      lastError = err;
+      console.warn(`STKR_LOG: Fetch error. Retrying in ${backoff}ms... (Attempt ${i + 1}/${retries})`, err);
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      backoff *= 2;
+    }
+  }
+  throw lastError || new Error(`Failed after ${retries} retries`);
+}
+
 async function startServer() {
   console.log("Configuring Express app...");
   const app = express();
@@ -243,7 +265,7 @@ async function startServer() {
 
       const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolsParam)}&crumb=${encodeURIComponent(session.crumb)}`;
       
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         headers: {
           "Cookie": session.cookie,
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -282,7 +304,7 @@ async function startServer() {
 
       const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&crumb=${encodeURIComponent(session.crumb)}`;
       
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         headers: {
           "Cookie": session.cookie,
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -318,7 +340,7 @@ async function startServer() {
 
       const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=20&newsCount=0&crumb=${encodeURIComponent(session.crumb)}`;
       
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         headers: {
           "Cookie": session.cookie,
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

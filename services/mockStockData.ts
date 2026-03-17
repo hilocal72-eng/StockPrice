@@ -3,7 +3,7 @@ import { StockDetails, PricePoint, DayAction, StockInfo, SentimentAnalysis, Sear
 
 // Simple in-memory cache to speed up repeated requests
 const dataCache: Record<string, { data: StockDetails; timestamp: number }> = {};
-const CACHE_TTL = 60 * 1000; // 60 seconds
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const fetchYahoo = async (symbol: string, interval: string, range: string): Promise<any | null> => {
   try {
@@ -172,8 +172,8 @@ export const runScreener = async (
 
     quotesArray.forEach((quote: any) => {
       const currentPrice = quote.regularMarketPrice;
-      const openPrice = quote.regularMarketOpen || quote.regularMarketPreviousClose;
-      const prevClose = quote.regularMarketPreviousClose || openPrice;
+      const prevClose = quote.regularMarketPreviousClose || quote.regularMarketPrice;
+      const openPrice = quote.regularMarketOpen || prevClose;
       
       if (currentPrice && openPrice) {
         const changeFromOpen = ((currentPrice - openPrice) / openPrice) * 100;
@@ -319,19 +319,42 @@ export const fetchStockData = async (ticker: string, range: string = '1y', inter
     const meta = chartResult.meta;
     const currentPrice = meta.regularMarketPrice;
     
+    // 1. Process History Result (Weekly Report Data)
     const hTimestamps = historyResult.timestamp || [];
-    const hCloses = historyResult.indicators.quote[0].close || [];
     const hQuotes = historyResult.indicators.quote[0];
     
+    // Clean history data: remove nulls/zeros and create a reliable sequence
+    const cleanHistory = hTimestamps.map((t: number, i: number) => ({
+      time: t,
+      open: hQuotes.open[i],
+      high: hQuotes.high[i],
+      low: hQuotes.low[i],
+      close: hQuotes.close[i],
+      volume: hQuotes.volume[i]
+    })).filter((p: any) => p.close !== null && p.close > 0);
+
+    // 2. Determine Previous Close for daily change calculation
     let prevClose = meta.regularMarketPreviousClose;
-    if (!prevClose && hCloses.length >= 2) {
-      prevClose = hCloses[hCloses.length - 2];
+    
+    if (!prevClose && cleanHistory.length >= 1) {
+      // If meta previous close is missing, use the last valid close from history
+      // But if the last history point is actually "today", use the one before it
+      const lastHistoryPoint = cleanHistory[cleanHistory.length - 1];
+      const isLastPointToday = Math.abs(lastHistoryPoint.close - currentPrice) / currentPrice < 0.001;
+      
+      if (isLastPointToday && cleanHistory.length >= 2) {
+        prevClose = cleanHistory[cleanHistory.length - 2].close;
+      } else {
+        prevClose = lastHistoryPoint.close;
+      }
     }
-    if (!prevClose) prevClose = hCloses[0] || currentPrice;
+    
+    if (!prevClose) prevClose = currentPrice;
 
     const dayChange = currentPrice - prevClose;
     const dayChangePercent = prevClose !== 0 ? (dayChange / prevClose) * 100 : 0;
 
+    // 3. Process Chart Result (Main Chart Data)
     const timestamps = chartResult.timestamp || [];
     const quotes = chartResult.indicators.quote[0];
     const history: PricePoint[] = timestamps.map((t: number, i: number) => ({
@@ -355,19 +378,19 @@ export const fetchStockData = async (ticker: string, range: string = '1y', inter
       sentiment: generateSentimentAnalysis(dayChangePercent, history)
     };
 
-    const dailyAction: DayAction[] = hTimestamps.map((t: number, i: number) => {
-      const open = hQuotes.open[i] || 0;
-      const close = hQuotes.close[i] || 0;
-      const rowPrevClose = i > 0 ? hQuotes.close[i-1] : hQuotes.open[i];
+    // 4. Generate Weekly Report (Daily Action)
+    const dailyAction: DayAction[] = cleanHistory.map((p: any, i: number) => {
+      // Compare each day to the actual previous trading day in the clean sequence
+      const rowPrevClose = i > 0 ? cleanHistory[i-1].close : p.open;
       return {
-        date: new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        open: parseFloat(open.toFixed(2)),
-        high: parseFloat((hQuotes.high[i] || 0).toFixed(2)),
-        low: parseFloat((hQuotes.low[i] || 0).toFixed(2)),
-        close: parseFloat(close.toFixed(2)),
-        volume: hQuotes.volume[i] || 0,
-        change: parseFloat((close - rowPrevClose).toFixed(2)),
-        changePercent: parseFloat((rowPrevClose !== 0 ? ((close - rowPrevClose) / rowPrevClose) * 100 : 0).toFixed(2))
+        date: new Date(p.time * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        open: parseFloat((p.open || 0).toFixed(2)),
+        high: parseFloat((p.high || 0).toFixed(2)),
+        low: parseFloat((p.low || 0).toFixed(2)),
+        close: parseFloat((p.close || 0).toFixed(2)),
+        volume: p.volume || 0,
+        change: parseFloat((p.close - rowPrevClose).toFixed(2)),
+        changePercent: parseFloat((rowPrevClose !== 0 ? ((p.close - rowPrevClose) / rowPrevClose) * 100 : 0).toFixed(2))
       };
     }).reverse().slice(0, 5);
 
